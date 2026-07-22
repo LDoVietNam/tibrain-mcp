@@ -1,25 +1,25 @@
 # AGENTS.md — TiBrain Central Intelligence Hub
 
-> **Phiên bản:** 2.3.0 | **Cập nhật:** 2026-07-16 | **Công nghệ:** Go 1.25+ | **Cổng:** `1810` (MCP Hub: unified)
+> **Phiên bản:** 2.3.0 | **Cập nhật:** 2026-07-22 | **Công nghệ:** Go 1.25+ | **Cổng:** `3005` (MCP Hub: unified)
 
 ---
 
 ## 1. Tổng quan & Vai trò
 
-TiBrain là **internal intelligence service** của hệ sinh thái Ti — một HTTP server duy nhất tại port `1810` gồm REST API, MCP (SSE) và Browser UI. TiBrain quản lý knowledge, memory, retrieval, agent orchestration và learning; TiBrain không phải model ingress.
+TiBrain là **internal intelligence service** của hệ sinh thái Ti — một HTTP server duy nhất tại port `3005` gồm REST API, MCP (SSE) và Browser UI. TiBrain quản lý knowledge, memory, retrieval, agent orchestration và learning; TiBrain không phải model ingress.
 
 ```
-CLI / Agent ──► TiRouter front door (:1817) ──► CLIProxyAPI (:1870) ──► Provider executors
+CLI / Agent ──► TiRouter front door (:3004) ──► CLIProxyAPI (:3004) ──► Provider executors
                               │
                               ▼
-                       TiBrain (:1810)
+                       TiBrain (:3005)
                        ├─ MCP Hub
                        ├─ SQLite / Vector Store
                        ├─ RAG / Memory / Learning
                        └─ Prompt Intelligence
 ```
 
-**Vai trò:** Intelligence/Knowledge Plane nội bộ, Agent Orchestrator, MCP Hub và Cognitive Memory. **TiRouter `:1817` là public model ingress; CLIProxyAPI `:1870` là runtime áp dụng policy/prompt bắt buộc.**
+**Vai trò:** Intelligence/Knowledge Plane nội bộ, Agent Orchestrator, MCP Hub và Cognitive Memory. **TiRouter `:3004` là public model ingress; CLIProxyAPI `:3004` là runtime áp dụng policy/prompt bắt buộc.**
 
 ---
 
@@ -28,7 +28,7 @@ CLI / Agent ──► TiRouter front door (:1817) ──► CLIProxyAPI (:1870) 
 ### 2.1 Single-Port
 
 ```
-:1810 → main.go
+:3005 → main.go
  ├─ /health, /ready          → Health probes
  ├─ /register-cli, ...        → CLI Registry & Handoff
  ├─ /chat                     → Chat / NL
@@ -100,6 +100,16 @@ TiRouter → TiBrain → RAGSystemManager  → Embedding API
 
 **Surface Tools (mcp_surface_tools.go):** `brain_search`, `brain_index_knowledge`, `brain_memory_store/query/stats`, `brain_feedback`, Cloudflare management tools
 
+**Ops Tools (tools_ops.go):**
+
+| Tool | Package | Mô tả |
+|---|---|---|
+| `ops.qualitygate` | `internal/qualitygate` | Chạy pipeline gofmt → vet → build → test |
+| `ops.audit` | `internal/audit` | 扫 repo tìm secret, binary artifacts |
+| `ops.handoff` | `internal/tracker` | Ghi handoff entry |
+| `ops.handoffs` | `internal/tracker` | Đọc recent handoffs |
+| `ops.errors` | `internal/tracker` | Đọc recent errors (deduped) |
+
 ### 2.4 Sub-MCP Servers
 
 TiBrain là **MCP server chính**, các MCP servers khác đăng ký làm sub-MCP:
@@ -112,7 +122,7 @@ TiBrain là **MCP server chính**, các MCP servers khác đăng ký làm sub-MC
 
 **Luồng MCP:**
 ```
-Agent/CLI → brain_mcp_proxy_call → TiBrain MCP Hub (port 1810)
+Agent/CLI → brain_mcp_proxy_call → TiBrain MCP Hub (port 3005)
                                     ├─► chrome-devtools-mcp (upstream)
                                     ├─► github-mcp (upstream)
                                     └─► obsidian-mcp-server (upstream)
@@ -126,7 +136,7 @@ Agent/CLI → brain_mcp_proxy_call → TiBrain MCP Hub (port 1810)
 
 ```yaml
 tibrain:
-  port: 1810
+  port: 3005
   data_dir: "data"
   api_keys: ["test-key-123", "dev-key-456"]
 
@@ -141,7 +151,7 @@ mcp:
   compatibility: true
   # Unified mode: TiBrain acts as both control plane AND MCP proxy hub
   # All MCP servers (chrome-devtools-mcp, github-mcp, etc.) register as sub-MCPs
-  internal_hub: { enabled: true, url: "http://localhost:1810" }
+  internal_hub: { enabled: true, url: "http://localhost:3005" }
   targets:
     filesystem: "1mcp-local-bridge"
     fs: "1mcp-local-bridge"
@@ -171,7 +181,7 @@ mcp:
 | `TIBRAIN_CLOUDFLARE_SECRET` | `""` | Cloudflare encryption key |
 | `TIBRAIN_SECRET_KEY` | `""` | Fallback encryption key |
 
-**CLI Flags:** `--port` (default 1810), `--index-knowledge`
+**CLI Flags:** `--port` (default 3005), `--index-knowledge`
 
 ---
 
@@ -201,17 +211,17 @@ make verify                 # Pre-commit: vet + lint + test-short
 make run                    # Build + run
 make run-debug              # Build debug + run
 make run-index              # Build + run --index-knowledge
-./tibrain.exe --port 1810
+./tibrain.exe --port 3005
 
 # Docker
 docker build -t tibrain .
-docker run -p 1810:1810 -v tibrain_data:/app/data tibrain
+docker run -p 3005:3005 -v tibrain_data:/app/data tibrain
 docker-compose up -d
 
-# Tunnel & Service`r`nmake tunnel                 # Cloudflare tunnel (foreground)`r`nmake start                  # Build + run + tunnel (all-in-one)`r`r`n# Public tunnel endpoint:`r`nhttps://tibrain.trepremium.online -> port 1810 (MCP Hub)
+# Tunnel & Service`r`nmake tunnel                 # Cloudflare tunnel (foreground)`r`nmake start                  # Build + run + tunnel (all-in-one)`r`r`n# Public tunnel endpoint:`r`nhttps://tibrain.trepremium.online -> port 3005 (MCP Hub)
 
 # Windows Batch Scripts (Port cleanup included)
-start-tibrain.bat           # Start TiBrain (kills old process on port 1810 first)
+start-tibrain.bat           # Start TiBrain (kills old process on port 3005 first)
 stop-tibrain.bat            # Stop TiBrain and cleanup processes
 restart-tibrain.bat         # Restart TiBrain service
 bootstrap-mcp.js            # Register sub-MCPs (chrome-devtools-mcp, etc.)
@@ -220,10 +230,10 @@ bootstrap-mcp.js            # Register sub-MCPs (chrome-devtools-mcp, etc.)
 ### 4.2 Health Check
 
 ```bash
-curl http://localhost:1810/health    # Liveness
-curl http://localhost:1810/ready     # Readiness
-curl http://localhost:1810/status    # Service status
-curl http://localhost:1810/list-mcps      # List MCP servers (via tool)`r`ncurl http://localhost:1810/mcp/sse          # MCP SSE endpoint
+curl http://localhost:3005/health    # Liveness
+curl http://localhost:3005/ready     # Readiness
+curl http://localhost:3005/status    # Service status
+curl http://localhost:3005/list-mcps      # List MCP servers (via tool)`r`ncurl http://localhost:3005/mcp/sse          # MCP SSE endpoint
 ```
 
 ### 4.3 Agent Workflow
@@ -403,6 +413,9 @@ git submodule update --init --recursive
 | `cross_reference_intelligence.go` | Document linking, version tracking |
 | `auto_learning_mechanism.go` | Query patterns, quality scoring |
 | `mcp_surface_tools.go` | Surface MCP tools |
+| `internal/qualitygate` | Built-in quality gate pipeline (gofmt, vet, build, test) |
+| `internal/audit` | Built-in secret and binary artifact scanner |
+| `internal/tracker` | Built-in handoff/error JSONL logger |
 | `docs/PROMPT_INTELLIGENCE_CONTRACT.md` | Target API và data contract với TiRouter |
 
 ---
@@ -442,6 +455,9 @@ git submodule update --init --recursive
 | Bảng trùng tên (`query_patterns`, `learning_metrics`) | 🟡 Medium | Định nghĩa ở nhiều file |
 | Schema drift detection | 🟢 Low | Checksum chưa active |
 | Prompt Intelligence API | 🟡 Planned | Contract đã chốt; code/migration chưa triển khai |
+| `internal/qualitygate` | 🟢 New | Built-in lint/vet/build/test pipeline |
+| `internal/audit` | 🟢 New | Secret and artifact scanner |
+| `internal/tracker` | 🟢 New | Handoff/error JSONL logging |
 
 ---
 
