@@ -23,10 +23,12 @@ import (
 	"gopkg.in/yaml.v3"
 	_ "modernc.org/sqlite"
 
+	mcpconfig "github.com/ti/router/tibrain/internal/config"
 	"github.com/ti/router/tibrain/internal/core"
 	"github.com/ti/router/tibrain/internal/db"
-	"github.com/ti/router/tibrain/internal/memory"
 	"github.com/ti/router/tibrain/internal/mcp"
+	"github.com/ti/router/tibrain/internal/memory"
+	"github.com/ti/router/tibrain/internal/security"
 	"github.com/ti/router/tibrain/internal/tools"
 )
 
@@ -167,7 +169,7 @@ func defaultConfig() *Config {
 	wd, _ := os.Getwd()
 	tibrainDataDir := filepath.Join(wd, "data")
 	return &Config{
-		Port:             1810,
+		Port:             3005,
 		DataDir:          tibrainDataDir,
 		AllowedRoots:     []string{`Z:\02_CORE\_cli\.config`, `Z:\02_CORE\skills`, `Z:\01_PROJECTS\apps\extension`},
 		KnowledgeSources: []string{},
@@ -1820,7 +1822,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
     <div class="hero">
       <div>
         <h1>TiBrain Overview</h1>
-        <div class="sub">Browser UI and API share the same port: <strong>1810</strong>.</div>
+        <div class="sub">Browser UI and API share the same port: <strong>3005</strong>.</div>
       </div>
       <div class="pill">Single-port startup: backend + browser UI</div>
     </div>
@@ -2571,9 +2573,24 @@ func main() {
 
 	server := NewServer(hub, config)
 
-	// Initialize Embedded MCP Server (Streamable HTTP canonical, SSE legacy)
-	mcpManager := mcp.NewMCPServerManager()
-	mcp.SetAllowedRoots(config.AllowedRoots)
+	// Initialize Embedded MCP Server (Streamable HTTP canonical, SSE legacy).
+	// Config + security are loaded fail-closed; startup aborts if a required
+	// precondition (auth/audit/admin for trusted_full) is not satisfied.
+	mcpCfg, err := mcpconfig.Load(getTiBrainDir() + "/config.yaml")
+	if err != nil {
+		logger.Error("MCP config load failed: %v", err)
+		return
+	}
+	mcp.SetAllowedRoots(mcpCfg.EffectiveRoots())
+	authenticator := security.NewAuthenticator(
+		mcpCfg.BearerToken(),
+		mcpCfg.Auth.AllowedOrigins,
+		mcpCfg.Auth.RateLimitPerMinute,
+	)
+	guard := security.NewGuard(mcpCfg)
+	auditor := security.NewAuditor(mcpCfg.Audit.Path, mcpCfg.Audit.RedactSecrets, mcpCfg.Audit.Enabled)
+	defer auditor.Close()
+	mcpManager := mcp.NewManager(mcpCfg, guard, auditor)
 
 	// Handlers are now registered via the mux below
 
@@ -2604,9 +2621,9 @@ func main() {
 	// Prompt Intelligence (TiRouter preflight / feedback / catalog)
 	// TODO: Implement prompt intelligence in Phase 5
 
-	mux.HandleFunc("/mcp", mcpManager.HandleStreamableHTTP)
-	mux.HandleFunc("/mcp/sse", mcpManager.HandleSSE)
-	mux.HandleFunc("/mcp/message", mcpManager.HandleMessage)
+	mux.HandleFunc("/mcp", authenticator.Wrap(mcpManager.HandleStreamableHTTP))
+	mux.HandleFunc("/mcp/sse", authenticator.Wrap(mcpManager.HandleSSE))
+	mux.HandleFunc("/mcp/message", authenticator.Wrap(mcpManager.HandleMessage))
 	// CLI Registry Handlers
 	mux.HandleFunc("/register-cli", server.handleRegisterCLI)
 	mux.HandleFunc("/unregister-cli", server.handleUnregisterCLI)
