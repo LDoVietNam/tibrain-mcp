@@ -49,7 +49,7 @@ dịch vụ intelligence nội bộ cho:
 - **MCP hub**: đăng ký và phục vụ tool qua Model Context Protocol (SSE).
 - **Learning & quality**: thống kê theo mô hình BEADS LEARN.
 
-Toàn bộ chạy trên **một cổng duy nhất** (mặc định `1811` hoặc `1810`): REST tại `/api/*`,
+Toàn bộ chạy trên **một cổng duy nhất** (mặc định `3005`): REST tại `/api/*`,
 MCP SSE tại `/mcp`, và Browser UI phục vụ trực tiếp từ cùng server.
 
 ---
@@ -68,19 +68,19 @@ TiBrain cung cấp các tool filesystem qua MCP SSE:
 
 | Endpoint | Mô tả |
 | --- | --- |
-| `http://localhost:1811/health` | Health check |
-| `http://localhost:1811/gui` | Web UI |
-| `http://localhost:1811/mcp` | MCP SSE endpoint |
+| `http://localhost:3005/health` | Health check |
+| `http://localhost:3005/gui` | Web UI |
+| `http://localhost:3005/mcp` | MCP SSE endpoint |
 | `https://tibrain.trepremium.online/mcp` | Public MCP endpoint |
 
 ### Test Tools
 
 ```powershell
 # Health check
-curl http://localhost:1811/health
+curl http://localhost:3005/health
 
 # List tools via SSE
-curl http://localhost:1811/mcp
+curl http://localhost:3005/mcp
 ```
 
 ---
@@ -91,7 +91,7 @@ Port được cấu hình trong `config.yaml`:
 
 ```yaml
 tibrain:
-  port: 1810  # MCP Hub port
+  port: 3005  # MCP Hub port
   data_dir: "data"
 ```
 
@@ -101,7 +101,7 @@ Tunnel config tại `.runtime/config/tunnel_config.json`:
 {
   "tunnel": "tibrain",
   "hostname": "tibrain.trepremium.online",
-  "target": "http://localhost:1810"
+  "target": "http://localhost:3005"
 }
 ```
 
@@ -122,11 +122,11 @@ Tunnel config tại `.runtime/config/tunnel_config.json`:
 Kiến trúc single-port: một HTTP server duy nhất định tuyến tới nhiều subsystem.
 
 ```
-CLI / Agent ──► TiRouter :1817 ──► CLIProxyAPI :1870 ──► Provider executors
+CLI / Agent ──► TiRouter :3004 ──► CLIProxyAPI :3004 ──► Provider executors
                        │
                        ▼
                       ┌──────────────────────────────────────┐
-       HTTP :1810 ───►│            TiBrain Server            │
+       HTTP :3005 ───►│            TiBrain Server            │
                       │  (single-port HTTP, main.go)          │
                       ├──────────────────────────────────────┤
         /api/*  (REST)──►│  REST API layer                       │

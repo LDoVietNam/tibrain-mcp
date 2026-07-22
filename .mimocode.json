@@ -1,0 +1,74 @@
+{
+  "$schema": "https://ti-opencode-vibe.example.com/config.json",
+  "mcp": {
+    "tibrain": {
+      "type": "remote",
+      "url": "http://localhost:3005/mcp/sse",
+      "enabled": true,
+      "timeout": 10000,
+      "sync_memory": true
+    }
+  },
+  "provider": {
+    "freetokenfaucet-openai": {
+      "api": "https://freetokenfaucet.com/v1",
+      "npm": "@ai-sdk/openai-compatible",
+      "models": {
+        "gpt-4o-free": {
+          "id": "gpt-4o",
+          "name": "GPT-4o Free",
+          "cost": {
+            "input": 0,
+            "output": 0
+          },
+          "limit": {
+            "context": 128000,
+            "output": 16384
+          },
+          "temperature": true,
+          "reasoning": false,
+          "attachment": true,
+          "tool_call": true
+        }
+      }
+    },
+    "freetokenfaucet-anthropic": {
+      "api": "https://freetokenfaucet.com/anthropic",
+      "npm": "@ai-sdk/anthropic",
+      "models": {
+        "claude-3-5-sonnet-20241022-free": {
+          "id": "claude-3-5-sonnet-20241022",
+          "name": "Claude 3.5 Sonnet Free",
+          "cost": {
+            "input": 0,
+            "output": 0
+          },
+          "limit": {
+            "context": 200000,
+            "output": 4096
+          },
+          "temperature": true,
+          "reasoning": false,
+          "attachment": true,
+          "tool_call": true
+        },
+        "claude-3-7-sonnet-20250219-free": {
+          "id": "claude-3-7-sonnet-20250219",
+          "name": "Claude 3.7 Sonnet Free",
+          "cost": {
+            "input": 0,
+            "output": 0
+          },
+          "limit": {
+            "context": 200000,
+            "output": 8192
+          },
+          "temperature": true,
+          "reasoning": true,
+          "attachment": true,
+          "tool_call": true
+        }
+      }
+    }
+  }
+}

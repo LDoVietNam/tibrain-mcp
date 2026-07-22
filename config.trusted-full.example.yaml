@@ -1,0 +1,60 @@
+# Example TiBrain MCP Gateway configuration for the trusted_full profile.
+#
+# trusted_full ONLY activates when ALL of the following hold (startup fails
+# closed otherwise):
+#   1. TIBRAIN_AUTONOMY_MODE=trusted_full   (environment)
+#   2. permissions.trusted_full.enabled=true
+#   3. at least one admin_identity configured
+#   4. audit.enabled=true
+#   5. TIBRAIN_MCP_BEARER_TOKEN is set
+#
+# Even when trusted_full is active, ChatGPT's own confirmation / risky-action /
+# plan blocking is unaffected and cannot be bypassed by server-side config.
+
+tibrain:
+  port: 3005
+  data_dir: "data"
+
+server:
+  host: "127.0.0.1"
+  port: 3005
+  public_base_url: "https://mcp.trepremium.online"
+
+mcp:
+  streamable_http_path: "/mcp"
+  legacy_sse_path: "/mcp/sse"
+  legacy_message_path: "/mcp/message"
+  session_ttl: "30m"
+  max_concurrent_calls_per_session: 4
+  max_request_bytes: 1048576
+  max_output_bytes: 4194304
+
+auth:
+  mode: "bearer"
+  bearer_token_env: "TIBRAIN_MCP_BEARER_TOKEN"
+  allowed_origins:
+    - "https://chatgpt.com"
+    - "https://chat.openai.com"
+  rate_limit_per_minute: 60
+
+permissions:
+  active_profile: "trusted_full"
+  trusted_full:
+    enabled: true
+    # Replace with the resolved identity hash(es) of the authenticated admin.
+    # The gateway hashes bearer tokens; supply the hash reported in the audit log
+    # on a successful operator call, or leave empty to require explicit admin setup.
+    admin_identities:
+      - "REPLACE_WITH_ADMIN_IDENTITY_HASH"
+    filesystem_roots:
+      - 'C:\'
+      - 'Z:\'
+
+audit:
+  enabled: true
+  path: ".runtime/logs/audit.jsonl"
+  redact_secrets: true
+
+allowed_roots:
+  - "Z:\\02_CORE\\_cli\\.config"
+  - "Z:\\01_PROJECTS\\apps\\extension"

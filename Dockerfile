@@ -33,7 +33,7 @@ COPY --from=builder /app/tibrain .
 COPY --from=builder /app/config.yaml .
 
 # Expose ports
-EXPOSE 1810 1840
+EXPOSE 3005 1840
 
 # Create non-root user
 RUN addgroup -g 1001 -S tibrain && \
@@ -42,7 +42,7 @@ USER tibrain
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --timeout=5 http://localhost:1810/health || exit 1
+    CMD wget --no-verbose --tries=1 --timeout=5 http://localhost:3005/health || exit 1
 
 # Run the application
 CMD ["./tibrain"]

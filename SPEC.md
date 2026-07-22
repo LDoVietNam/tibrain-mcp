@@ -108,7 +108,7 @@ internal/
 
 ### Mục tiêu
 
-TiBrain cung cấp registry, retrieval, ranking, versioning, feedback và evaluation cho plugin Prompt Orchestrator của TiRouter. TiRouter vẫn là model ingress duy nhất tại `:1817`; request mutation chạy trong CLIProxyAPI runtime `:1870`.
+TiBrain cung cấp registry, retrieval, ranking, versioning, feedback và evaluation cho plugin Prompt Orchestrator của TiRouter. TiRouter vẫn là model ingress duy nhất tại `:3004`; request mutation chạy trong CLIProxyAPI runtime `:3004`.
 
 Contract canonical: [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTELLIGENCE_CONTRACT.md).
 

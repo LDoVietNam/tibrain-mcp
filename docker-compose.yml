@@ -5,7 +5,7 @@ services:
     build: .
     container_name: tibrain-hub
     ports:
-      - "1810:1810"
+      - "3005:3005"
       - "1840:1840"
     volumes:
       - tibrain_data:/app/data
@@ -15,7 +15,7 @@ services:
       - MCP_HUB_URL=http://localhost:1840
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--timeout=5", "http://localhost:1810/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--timeout=5", "http://localhost:3005/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -26,9 +26,9 @@ services:
     image: ghcr.io/router-for-me/omniroute:latest
     container_name: omniroute-provider-pool
     ports:
-      - "1807:1807"
+      - "3004:3004"
     environment:
-      - OMNIROUTE_PORT=1807
+      - OMNIROUTE_PORT=3004
       - MAX_CONNECTIONS=100
     restart: unless-stopped
     networks:

@@ -2,7 +2,7 @@
 
 > **Lưu ý về Prompt Intelligence:** các endpoint `/api/v1/prompt/*` đang là target contract, chưa phải API runtime đã xác minh. Xem [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTELLIGENCE_CONTRACT.md) và `TASKS.md` để theo dõi triển khai. Không tích hợp production vào các endpoint này trước khi contract test chạy xanh.
 
-TiBrain là một Go service chạy trên **port `1810`**, gom chung một HTTP server duy nhất phục vụ đồng thời:
+TiBrain là một Go service chạy trên **port `3005`**, gom chung một HTTP server duy nhất phục vụ đồng thời:
 
 - **REST API** (root mux — định nghĩa trong `main.go` + `api_server.go`)
 - **REST API mở rộng** dưới prefix `/api/*` (`APIServer` trong `api_server.go`)
@@ -14,14 +14,14 @@ TiBrain là một Go service chạy trên **port `1810`**, gom chung một HTTP 
 
 | Mục | Giá trị |
 |-----|---------|
-| Base URL | `http://localhost:1810` |
+| Base URL | `http://localhost:3005` |
 | Content-Type | `application/json` (cho các request có body) |
 | MCP SSE endpoint | `GET /mcp/sse`, `POST /mcp/message` |
 
 Quy ước ví dụ:
 
 ```bash
-export TIBRAIN="http://localhost:1810"
+export TIBRAIN="http://localhost:3005"
 ```
 
 ---
@@ -492,7 +492,7 @@ Response (minh họa):
 
 ```json
 {
-  "answer": "TiBrain mặc định chạy trên port 1810...",
+  "answer": "TiBrain mặc định chạy trên port 3005...",
   "sources": [
     { "doc_id": "doc_12", "title": "Config", "score": 0.88 }
   ],
@@ -800,7 +800,7 @@ Response (minh họa):
 #### Ví dụ: GET /api/docs/search
 
 ```bash
-curl -s "$TIBRAIN/api/docs/search?q=port+1810"
+curl -s "$TIBRAIN/api/docs/search?q=port+3005"
 ```
 
 ### Browser Runtime
@@ -924,6 +924,6 @@ curl -s -X POST "$TIBRAIN/mcp/message" \
 
 ## Ghi chú cuối
 
-- Tất cả path là tương đối so với base URL `http://localhost:1810`.
+- Tất cả path là tương đối so với base URL `http://localhost:3005`.
 - Với các endpoint `GET` có tham số, hãy dùng query string (ví dụ `?id=...`, `?name=...`, `?q=...`); tên tham số cụ thể có thể khác — tham chiếu implement nếu cần chính xác.
 - Payload/response minh họa trong tài liệu này nhằm mục đích tham khảo cấu trúc, không phải hợp đồng API chính thức.

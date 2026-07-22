@@ -1,17 +1,14 @@
-# TiBrain Configuration Example
-# Copy to config.yaml and fill in your values
-# For production: use environment variables for secrets
+# Example TiBrain MCP Gateway configuration (NO real secrets).
+# Copy to config.yaml and set TIBRAIN_MCP_BEARER_TOKEN in the environment.
 
 tibrain:
-  port: 1810
+  port: 3005
   data_dir: "data"
 
 cli_registry:
   enabled: true
-
 handoff_tracking:
   enabled: true
-
 skill_sync:
   enabled: false
 
@@ -22,22 +19,53 @@ mcp:
   compatibility: true
   internal_hub:
     enabled: true
-    url: "http://localhost:1810"
+    url: "http://localhost:3005"
   targets:
     filesystem: "builtin"
     fs: "builtin"
     git: "git-mcp"
     sqlite: "sqlite-mcp"
-    postgres: "postgres-mcp"
     github: "github-mcp"
     obsidian: "obsidian-mcp-server"
     browser: "browser-extension"
     chrome-devtools: "chrome-devtools-mcp"
 
-# Environment variables:
-# MCP_HUB_API_KEY - MCP Hub API key (required for secure operation)
-# MCPPROXY_API_KEY - MCP Proxy API key
-# TIBRAIN_CLOUDFLARE_SECRET - Cloudflare encryption key
-# TIBRAIN_SECRET_KEY - Fallback encryption key
-# TIBRAIN_INDEX_KNOWLEDGE - Set to "true" to auto-index on startup
-# TIBRAIN_ALLOWED_ROOTS - JSON array of allowed filesystem roots
+server:
+  host: "127.0.0.1"
+  port: 3005
+  public_base_url: "https://mcp.trepremium.online"
+
+mcp:
+  streamable_http_path: "/mcp"
+  legacy_sse_path: "/mcp/sse"
+  legacy_message_path: "/mcp/message"
+  session_ttl: "30m"
+  max_concurrent_calls_per_session: 4
+  max_request_bytes: 1048576
+  max_output_bytes: 4194304
+
+auth:
+  mode: "bearer"
+  bearer_token_env: "TIBRAIN_MCP_BEARER_TOKEN"
+  allowed_origins:
+    - "https://chatgpt.com"
+    - "https://chat.openai.com"
+  rate_limit_per_minute: 60
+
+permissions:
+  active_profile: "operator"
+  trusted_full:
+    enabled: false
+    admin_identities: []
+    filesystem_roots:
+      - 'C:\'
+      - 'Z:\'
+
+audit:
+  enabled: true
+  path: ".runtime/logs/audit.jsonl"
+  redact_secrets: true
+
+allowed_roots:
+  - "Z:\\02_CORE\\_cli\\.config"
+  - "Z:\\01_PROJECTS\\apps\\extension"
