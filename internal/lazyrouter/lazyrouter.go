@@ -69,13 +69,14 @@ func (t *LazyTool) load() error {
 }
 
 func (t *LazyTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
-	t.mu.Lock()
-	if !t.loaded {
-		if err := t.load(); err != nil {
-			t.mu.Unlock()
-			return nil, err
-		}
+	// load() acquires the write lock internally and performs its own
+	// double-checked locking, so we must not hold t.mu here (sync.RWMutex
+	// is not reentrant — holding it and calling load() deadlocks).
+	if err := t.load(); err != nil {
+		return nil, err
 	}
+
+	t.mu.Lock()
 	t.lastUsed = time.Now()
 	t.mu.Unlock()
 
