@@ -82,7 +82,7 @@ func (a *audit) Run(ctx context.Context, repoPath string) (*Report, error) {
 					findings = append(findings, Finding{
 						Severity: SeverityHigh, Category: "secret",
 						FilePath: rel, Line: i + 1,
-						Message: "potential secret key detected",
+						Message:    "potential secret key detected",
 						Suggestion: "move to environment variable or vault",
 					})
 				}

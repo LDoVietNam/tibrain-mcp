@@ -9,7 +9,7 @@ import (
 // for MCP sessions. It is transport-agnostic: transports register session IDs
 // and call Enter/Exit around tool calls.
 type SessionTracker struct {
-	mu      sync.Mutex
+	mu       sync.Mutex
 	sessions map[string]*sessionState
 	maxConc  int
 	ttl      time.Duration

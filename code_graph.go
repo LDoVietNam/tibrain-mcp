@@ -1,12 +1,14 @@
 package main
 
+import "github.com/ti/router/tibrain/internal/db"
+
 // CodeGraphService handles code graph operations
 type CodeGraphService struct {
-	hub *Hub
+	hub *db.Hub
 }
 
 // NewCodeGraphService creates a new code graph service
-func NewCodeGraphService(hub *Hub) *CodeGraphService {
+func NewCodeGraphService(hub *db.Hub) *CodeGraphService {
 	return &CodeGraphService{hub: hub}
 }
 

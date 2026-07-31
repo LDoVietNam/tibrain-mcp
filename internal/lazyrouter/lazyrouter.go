@@ -52,16 +52,16 @@ func (t *LazyTool) IsLoaded() bool {
 func (t *LazyTool) load() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.loaded {
 		return nil
 	}
-	
+
 	tool, err := t.loader(t.name)
 	if err != nil {
 		return err
 	}
-	
+
 	t.tool = tool
 	t.loaded = true
 	t.lastUsed = time.Now()
@@ -78,14 +78,14 @@ func (t *LazyTool) Execute(ctx context.Context, params map[string]interface{}) (
 	}
 	t.lastUsed = time.Now()
 	t.mu.Unlock()
-	
+
 	return t.tool.Execute(ctx, params)
 }
 
 type Router struct {
-	tools      map[string]*LazyTool
-	enabled    map[string]bool
-	mu         sync.RWMutex
+	tools   map[string]*LazyTool
+	enabled map[string]bool
+	mu      sync.RWMutex
 }
 
 func NewRouter() *Router {
@@ -117,23 +117,23 @@ func (r *Router) Disable(name string) {
 func (r *Router) GetTool(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	if !r.enabled[name] {
 		return nil, false
 	}
-	
+
 	tool, exists := r.tools[name]
 	if !exists {
 		return nil, false
 	}
-	
+
 	return tool, true
 }
 
 func (r *Router) ListTools() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	var names []string
 	for name, enabled := range r.enabled {
 		if enabled {
@@ -146,7 +146,7 @@ func (r *Router) ListTools() []string {
 func (r *Router) ToolStatus() map[string]map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	status := make(map[string]map[string]interface{})
 	for name, tool := range r.tools {
 		status[name] = map[string]interface{}{
@@ -175,9 +175,9 @@ func (o *OpenAICompatibleTool) ToOpenAIFormat() map[string]interface{} {
 
 func (o *OpenAICompatibleTool) getParameters() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":       "object",
 		"properties": map[string]interface{}{},
-		"required": []string{},
+		"required":   []string{},
 	}
 }
 
@@ -189,14 +189,14 @@ func ResponseToOpenAI(result interface{}, err error) map[string]interface{} {
 			},
 		}
 	}
-	
+
 	data, ok := result.(map[string]interface{})
 	if !ok {
 		return map[string]interface{}{
 			"content": result,
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"content": data,
 	}

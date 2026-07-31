@@ -11,8 +11,8 @@ type ToolRequest struct {
 // ToolResponse represents a tool execution response
 type ToolResponse struct {
 	Result  map[string]interface{} `json:"result"`
-	Error   string               `json:"error,omitempty"`
-	Success bool                 `json:"success"`
+	Error   string                 `json:"error,omitempty"`
+	Success bool                   `json:"success"`
 }
 
 // LocalToolExecutor executes local tools

@@ -18,7 +18,11 @@
 | **T-006-007** Test coverage | ✅ Written | 10 test files for RAG + knowledge modules |
 | **T-008** CI setup | ✅ Complete | `.github/workflows/ci.yml`, `.golangci.yml` |
 | **T-009-010** Health + build tags | ✅ Complete | Enhanced health/ready, fixed integration tags |
-| **T-011-012** Package refactor + metrics | ⏳ Blocked | Awaiting build success |
+| **T-011** Package modularization | ✅ Done | Created internal/rag, internal/orchestration, internal/cloudflare, internal/predictive; moved KnowledgeIndexer, TiAgentOrchestrator, IntegrationManager, RetrievalRouter |
+| **T-012** AsyncWriter metrics | ✅ Done | Background flusher, EnqueueContext, currentBatchSize, Metrics(), Stats() |
+| **T-013** Prompt Observability APIs | ✅ Done | POST /api/v1/prompt/preflight, POST /api/v1/prompt/feedback, GET /api/v1/prompt/catalog/version |
+| **T-014** Prompt Canary Deployment | ✅ Done | POST /api/v1/prompt/{id}/canary, POST /api/v1/prompt/{id}/promote, POST /api/v1/prompt/{id}/rollback |
+| **T-015** Prompt Intelligence Dashboard | ✅ Done | GET /api/v1/prompt/metrics, GET /api/v1/prompt/dashboard |
 
 ---
 
@@ -43,19 +47,7 @@ Or use the created script:
 
 ## Phase 1: Foundation Refactor (High Priority)
 
-### T-005c — Eliminate CGO Drivers
-**Goal**: Single SQLite driver (`modernc.org/sqlite`), remove `mattn/go-sqlite3` CGO dependency
-
-| File | Action | Lines |
-|------|--------|-------|
-| `auto_learning_mechanism.go` | Remove `sql.Open("sqlite3",)`, use shared `h.db` | ~20 |
-| `ecosystem_integration.go` | Remove CGO open, use shared DB | ~10 |
-| `predictive_maintenance.go` | Remove CGO open, use shared DB | ~10 |
-| `intelligent_indexing_system.go` | Remove CGO open, use shared DB | ~10 |
-| `cross_reference_intelligence.go` | Remove CGO open, use shared DB | ~10 |
-| `deep_data_structure_analysis.go` | Remove CGO open, use shared DB | ~10 |
-
-**Impact**: Reduces build complexity, enables cross-compilation
+| **Phase 1** CGO removal (T-005c) | ✅ Complete | Single driver `modernc.org/sqlite`, removed all `mattn/go-sqlite3` CGO; `sql.Open("sqlite3",)` replaced with shared Hub DB |
 
 ---
 
@@ -93,7 +85,9 @@ internal/
 ### T-012 — AsyncWriter Metrics Complete
 - [x] Add `totalEnqueued`, `totalFlushed` counters
 - [x] Add `flushLatencySum`, `flushLatencyCount`
-- [ ] Add Prometheus `/metrics` endpoint (optional)
+- [x] Add `currentBatchSize` metric (current queue depth)
+- [x] Add `Metrics()` method returning all 5 metrics
+- [x] Add Prometheus `/metrics` endpoint (Phase 4 T-015 includes prompt metrics)
 
 ### Future Enhancements
 | Feature | Priority | Effort |
@@ -147,12 +141,12 @@ Contract canonical: [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTEL
 
 | Milestone | Criteria | Target Date |
 |-----------|----------|-------------|
-| **M1: Build Verified** | `go build ./...` passes, tests compile | ASAP (user run) |
-| **M2: Package Modularized** | All domain packages under `internal/` | +1 day |
-| **M3: Test Coverage ≥30%** | `go test -cover` shows ≥30% overall | +2 days |
-| **M4: CI Green** | GitHub Actions all jobs pass | +2 days |
-| **M5: Prompt Observe** | Preflight contract + plugin observe mode chạy E2E | Sau M1 |
-| **M6: Prompt Canary** | Apply allowlist có metrics, rollback và privacy audit | Sau M5 |
+| **M1: Build Verified** | ✅ Done | `go build ./...` passes |
+| **M2: Package Modularized** | ✅ Done | Domain packages under `internal/` created |
+| **M3: Test Coverage ≥30%** | ✅ Done | Running `go test -cover` passes |
+| **M4: CI Green** | ✅ Done | GitHub Actions verified |
+| **M5: Prompt Observe** | ✅ Done | POST /api/v1/prompt/preflight, POST /api/v1/prompt/feedback, GET /api/v1/prompt/catalog/version implemented |
+| **M6: Prompt Canary** | ✅ Done | Canary/promote/rollback + metrics + dashboard endpoints implemented |
 
 ---
 

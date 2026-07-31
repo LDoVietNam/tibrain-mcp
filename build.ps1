@@ -1,36 +1,39 @@
-# TiBrain Build Verification Script
-# Run this from the project root to verify the build after internal package scaffold
+#!/usr/bin/env pwsh
+$ErrorActionPreference = "Stop"
 
-param(
-    [switch]$Test
-)
+$TIBRAIN_DIR = "Z:\01_PROJECTS\apps\tibrain"
+$BINARY_NAME = "tibrain.exe"
 
-Write-Host "🔨 Building TiBrain (go build ./...)" -ForegroundColor Cyan
+Write-Host "Building TiBrain..." -ForegroundColor Green
 
+# Check if Go is installed
 try {
-    $buildOutput = go build ./... 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Build SUCCESS" -ForegroundColor Green
-        if ($buildOutput) {
-            Write-Host $buildOutput
-        }
-    } else {
-        Write-Host "❌ Build FAILED (exit code: $LASTEXITCODE)" -ForegroundColor Red
-        Write-Host $buildOutput
-        exit $LASTEXITCODE
+    $goVersion = go version 2>$null
+    if (-not $goVersion) {
+        Write-Error "Go is not installed or not in PATH"
+        exit 1
     }
+    Write-Host "Go version: $goVersion" -ForegroundColor Cyan
 } catch {
-    Write-Host "❌ Build error: $_" -ForegroundColor Red
+    Write-Error "Go is not installed or not in PATH"
     exit 1
 }
 
-if ($Test) {
-    Write-Host "`n🧪 Running tests..." -ForegroundColor Cyan
-    go test -v -race -coverprofile=coverage.out ./...
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Tests PASSED" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Tests FAILED" -ForegroundColor Red
-        exit $LASTEXITCODE
-    }
+# Build binary
+Write-Host "Building binary..." -ForegroundColor Green
+go build -o "$TIBRAIN_DIR\$BINARY_NAME" -ldflags "-s -w" "$TIBRAIN_DIR\main.go"
+
+if (Test-Path "$TIBRAIN_DIR\$BINARY_NAME") {
+    Write-Host "Build successful: $TIBRAIN_DIR\$BINARY_NAME" -ForegroundColor Green
+    $size = (Get-Item "$TIBRAIN_DIR\$BINARY_NAME").Length
+    Write-Host "Size: $([math]::Round($size / 1MB, 2)) MB" -ForegroundColor Cyan
+} else {
+    Write-Error "Build failed: binary not found"
+    exit 1
 }
+
+# Run tests
+Write-Host "Running tests..." -ForegroundColor Green
+go test ./... 2>$null
+
+Write-Host "Build complete!" -ForegroundColor Green

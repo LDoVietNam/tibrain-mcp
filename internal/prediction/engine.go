@@ -9,9 +9,9 @@ import (
 
 // PredictionEngine predicts the best agent, skill, and tool for a task
 type PredictionEngine struct {
-	models   []Model
-	tools    []Tool
-	skills   []Skill
+	models    []Model
+	tools     []Tool
+	skills    []Skill
 	knowledge KnowledgeProvider
 }
 
@@ -22,39 +22,39 @@ type KnowledgeProvider interface {
 
 // Model represents a language model
 type Model struct {
-	ID          string
-	Name        string
+	ID           string
+	Name         string
 	Capabilities []string
 	QualityScore float64
-	Latency     float64
-	Cost        float64
+	Latency      float64
+	Cost         float64
 }
 
 // Tool represents an executable tool
 type Tool struct {
-	ID          string
-	Name        string
-	Category    string
-	Description string
-	QualityScore float64
+	ID            string
+	Name          string
+	Category      string
+	Description   string
+	QualityScore  float64
 	SecurityScore float64
 }
 
 // Skill represents a skill/prompt
 type Skill struct {
-	ID          string
-	Name        string
-	Domain      string
+	ID             string
+	Name           string
+	Domain         string
 	IntentPatterns []string
-	QualityScore float64
+	QualityScore   float64
 }
 
 // NewPredictionEngine creates a new prediction engine
 func NewPredictionEngine() *PredictionEngine {
 	return &PredictionEngine{
-		models:   make([]Model, 0),
-		tools:    make([]Tool, 0),
-		skills:   make([]Skill, 0),
+		models: make([]Model, 0),
+		tools:  make([]Tool, 0),
+		skills: make([]Skill, 0),
 	}
 }
 
@@ -148,11 +148,11 @@ func (e *PredictionEngine) predictSkill(intent string) *Skill {
 	}
 
 	return &Skill{
-		ID:          "default",
-		Name:        "Default Skill",
-		Domain:      "general",
+		ID:             "default",
+		Name:           "Default Skill",
+		Domain:         "general",
 		IntentPatterns: []string{intent},
-		QualityScore: 0.5,
+		QualityScore:   0.5,
 	}
 }
 
@@ -170,11 +170,11 @@ func (e *PredictionEngine) predictTool(skill *Skill) *Tool {
 	}
 
 	return &Tool{
-		ID:          "default",
-		Name:        "default_tool",
-		Category:    "general",
-		Description: "Default tool",
-		QualityScore: 0.5,
+		ID:            "default",
+		Name:          "default_tool",
+		Category:      "general",
+		Description:   "Default tool",
+		QualityScore:  0.5,
 		SecurityScore: 0.5,
 	}
 }

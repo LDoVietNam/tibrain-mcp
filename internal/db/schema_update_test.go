@@ -358,10 +358,10 @@ func TestSeedDefaultRTKRules_DefaultRules(t *testing.T) {
 
 	// Verify the four default rules are inserted with correct data
 	rules := []struct {
-		id            string
-		ruleType      string
-		modelPattern  string
-		priority      int
+		id           string
+		ruleType     string
+		modelPattern string
+		priority     int
 	}{
 		{"rule_gemini_ultra", "compression", "gemini*", 100},
 		{"rule_claude_gpt_large", "compression", "claude*", 90},
@@ -532,19 +532,19 @@ func TestUpdateIntegrationSchema_NilDB(t *testing.T) {
 
 func TestTaskMemoryFields(t *testing.T) {
 	task := struct {
-		ID            string
-		TaskID        string
-		TaskType      string
+		ID              string
+		TaskID          string
+		TaskType        string
 		TaskDescription string
-		TaskStatus    string
-		Priority      int
+		TaskStatus      string
+		Priority        int
 	}{
-		ID:            "task-1",
-		TaskID:        "task-123",
-		TaskType:      "indexing",
+		ID:              "task-1",
+		TaskID:          "task-123",
+		TaskType:        "indexing",
 		TaskDescription: "Index knowledge documents",
-		TaskStatus:    "pending",
-		Priority:      5,
+		TaskStatus:      "pending",
+		Priority:        5,
 	}
 
 	if task.TaskStatus != "pending" {
@@ -557,17 +557,17 @@ func TestTaskMemoryFields(t *testing.T) {
 
 func TestCrossBrainCommunicationFields(t *testing.T) {
 	msg := struct {
-		Type            string
-		FromBrain       string
-		ToBrain         string
+		Type              string
+		FromBrain         string
+		ToBrain           string
 		CommunicationType string
-		Status          string
+		Status            string
 	}{
-		Type:            "CrossBrain",
-		FromBrain:       "tibrain-1",
-		ToBrain:         "tibrain-2",
+		Type:              "CrossBrain",
+		FromBrain:         "tibrain-1",
+		ToBrain:           "tibrain-2",
 		CommunicationType: "query",
-		Status:          "pending",
+		Status:            "pending",
 	}
 
 	if msg.FromBrain != "tibrain-1" {
@@ -580,17 +580,17 @@ func TestCrossBrainCommunicationFields(t *testing.T) {
 
 func TestDecisionMemoryFields(t *testing.T) {
 	decision := struct {
-		ID               string
-		DecisionType     string
-		DecisionOutcome  string
-		DecisionMaker    string
-		Confidence       float64
+		ID              string
+		DecisionType    string
+		DecisionOutcome string
+		DecisionMaker   string
+		Confidence      float64
 	}{
-		ID:               "decision-1",
-		DecisionType:     "routing",
-		DecisionOutcome:  "selected-route-a",
-		DecisionMaker:    "router-agent",
-		Confidence:       0.85,
+		ID:              "decision-1",
+		DecisionType:    "routing",
+		DecisionOutcome: "selected-route-a",
+		DecisionMaker:   "router-agent",
+		Confidence:      0.85,
 	}
 
 	if decision.DecisionMaker != "router-agent" {

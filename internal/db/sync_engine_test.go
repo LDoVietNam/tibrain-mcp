@@ -114,11 +114,11 @@ func TestSyncEngine_SubscribeConcurrent(t *testing.T) {
 
 func TestSyncEngine_Publish(t *testing.T) {
 	tests := []struct {
-		name          string
-		listeners     int
-		events        int
-		bufferSize    int
-		wantDropped   int
+		name        string
+		listeners   int
+		events      int
+		bufferSize  int
+		wantDropped int
 	}{
 		{
 			name:        "single listener receives event",
@@ -295,8 +295,8 @@ func TestSyncEngine_NilProperties(t *testing.T) {
 	s.Subscribe(listener)
 
 	event := InternalSyncEvent{
-		Type:     "TestEvent",
-		EntityID: "entity-123",
+		Type:       "TestEvent",
+		EntityID:   "entity-123",
 		Properties: nil,
 	}
 

@@ -12,7 +12,7 @@ import (
 
 // NotionClient implements Notion API client
 type NotionClient struct {
-	apiToken string
+	apiToken   string
 	httpClient *http.Client
 }
 

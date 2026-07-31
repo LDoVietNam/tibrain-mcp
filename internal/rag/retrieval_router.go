@@ -1,4 +1,4 @@
-package main
+package rag
 
 import (
 	"context"
@@ -16,11 +16,11 @@ type RoutingDecision struct {
 }
 
 type RAGResponse struct {
-	Results      []*RAGResult `json:"results"`
-	Query        string       `json:"query"`
-	ResponseTime time.Duration `json:"response_time,omitempty"`
-	Confidence   float64      `json:"confidence"`
-	Tier         string       `json:"tier"`
+	Results      []*RAGResult   `json:"results"`
+	Query        string         `json:"query"`
+	ResponseTime time.Duration  `json:"response_time,omitempty"`
+	Confidence   float64        `json:"confidence"`
+	Tier         string         `json:"tier"`
 	Metadata     *QueryMetadata `json:"metadata,omitempty"`
 }
 
@@ -42,18 +42,16 @@ type QueryMetadata struct {
 }
 
 type StandardizedRAGResponse struct {
-	Answer     string      `json:"answer,omitempty"`
-	Results    []*RAGResult  `json:"results,omitempty"`
-	Confidence float64       `json:"confidence"`
-	Route      RouteType     `json:"route"`
+	Answer     string       `json:"answer,omitempty"`
+	Results    []*RAGResult `json:"results,omitempty"`
+	Confidence float64      `json:"confidence"`
+	Route      RouteType    `json:"route"`
 }
 
-type RetrievalRouter struct {
-	hub *Hub
-}
+type RetrievalRouter struct{}
 
-func NewRetrievalRouter(hub *Hub) *RetrievalRouter {
-	return &RetrievalRouter{hub: hub}
+func NewRetrievalRouter(_ interface{}) *RetrievalRouter {
+	return &RetrievalRouter{}
 }
 
 func (r *RetrievalRouter) RouteQuery(ctx context.Context, query string) *RoutingDecision {
@@ -61,13 +59,9 @@ func (r *RetrievalRouter) RouteQuery(ctx context.Context, query string) *Routing
 }
 
 func (r *RetrievalRouter) ExecuteRoute(ctx context.Context, query string, decision *RoutingDecision, _ interface{}, _ interface{}) (*StandardizedRAGResponse, error) {
-	resp, err := r.hub.Query(ctx, query, "default", 10, 0.5)
-	if err != nil {
-		return nil, err
-	}
 	return &StandardizedRAGResponse{
-		Results:    resp.Results,
-		Confidence: resp.Confidence,
+		Results:    []*RAGResult{},
+		Confidence: 0.0,
 		Route:      decision.Route,
 	}, nil
 }

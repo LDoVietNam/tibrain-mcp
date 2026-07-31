@@ -11,12 +11,12 @@ import (
 // Authenticator validates bearer credentials and enforces origin + rate limits
 // at the gateway edge. It is the single choke point for all /mcp traffic.
 type Authenticator struct {
-	token        string
-	origins      map[string]bool
-	ratePerMin   int
-	mu           sync.Mutex
+	token      string
+	origins    map[string]bool
+	ratePerMin int
+	mu         sync.Mutex
 	// identityBuckets tracks request timestamps keyed by client key (ip or token hash).
-	buckets      map[string][]time.Time
+	buckets map[string][]time.Time
 }
 
 // NewAuthenticator builds an edge authenticator. token may be "" when the

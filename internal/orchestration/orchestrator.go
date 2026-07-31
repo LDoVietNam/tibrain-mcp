@@ -1,7 +1,10 @@
-package main
+package orchestration
 
 import (
 	"context"
+
+	"github.com/ti/router/tibrain/internal/db"
+	"github.com/ti/router/tibrain/internal/rag"
 )
 
 // AgentRequest represents an agent processing request
@@ -24,15 +27,15 @@ type AgentResponse struct {
 
 // TiAgentOrchestrator handles multi-agent orchestration
 type TiAgentOrchestrator struct {
-	hub            *Hub
-	retrievalRouter *RetrievalRouter
+	hub             *db.Hub
+	retrievalRouter *rag.RetrievalRouter
 	cognitiveMemory interface{}
 }
 
 // NewTiAgentOrchestrator creates a new orchestrator
-func NewTiAgentOrchestrator(hub *Hub, router *RetrievalRouter) *TiAgentOrchestrator {
+func NewTiAgentOrchestrator(hub *db.Hub, router *rag.RetrievalRouter) *TiAgentOrchestrator {
 	return &TiAgentOrchestrator{
-		hub:            hub,
+		hub:             hub,
 		retrievalRouter: router,
 	}
 }
@@ -44,4 +47,14 @@ func (a *TiAgentOrchestrator) ProcessAgentRequest(ctx context.Context, req Agent
 		Response:   "TiBrain agent placeholder response: " + req.Query,
 		Confidence: 0.5,
 	}, nil
+}
+
+// IntegrationManager handles agent orchestration and cross-brain integration
+type IntegrationManager struct {
+	hub *db.Hub
+}
+
+// NewIntegrationManager creates a new integration manager
+func NewIntegrationManager(hub *db.Hub) *IntegrationManager {
+	return &IntegrationManager{hub: hub}
 }

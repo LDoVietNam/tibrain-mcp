@@ -42,9 +42,9 @@ func New() QualityGate {
 
 func (q *qualityGate) Run(ctx context.Context, repoPath string) (*Report, error) {
 	steps := []struct {
-		step     Step
-		name     string
-		args     []string
+		step       Step
+		name       string
+		args       []string
 		stopOnFail bool
 	}{
 		{StepLint, "gofmt", []string{"-l", "."}, true},

@@ -6,13 +6,13 @@ import "fmt"
 type ActionType string
 
 const (
-	ActionListTools   ActionType = "list_tools"
-	ActionCallTool    ActionType = "call_tool"
-	ActionListPrompts ActionType = "list_prompts"
-	ActionGetPrompt   ActionType = "get_prompt"
+	ActionListTools     ActionType = "list_tools"
+	ActionCallTool      ActionType = "call_tool"
+	ActionListPrompts   ActionType = "list_prompts"
+	ActionGetPrompt     ActionType = "get_prompt"
 	ActionListResources ActionType = "list_resources"
-	ActionReadResource ActionType = "read_resource"
-	ActionListRoots   ActionType = "list_roots"
+	ActionReadResource  ActionType = "read_resource"
+	ActionListRoots     ActionType = "list_roots"
 )
 
 // Decision represents policy decision

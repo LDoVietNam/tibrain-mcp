@@ -6,7 +6,7 @@ import (
 )
 
 // MCPProtocolInfo returns MCP protocol info
-func (s *Server) handleProtocolInfo(w http.ResponseWriter, r *http.Request) {
+func handleProtocolInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]interface{}{
 		"protocolVersion": "2025-11-25",
 		"capabilities": map[string]interface{}{

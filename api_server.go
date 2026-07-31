@@ -3,16 +3,19 @@ package main
 import (
 	"database/sql"
 	"net/http"
+
+	"github.com/ti/router/tibrain/internal/db"
+	"github.com/ti/router/tibrain/internal/orchestration"
 )
 
 // APIServer handles extended REST API endpoints
 type APIServer struct {
-	hub         *Hub
-	integration *IntegrationManager
+	hub         *db.Hub
+	integration *orchestration.IntegrationManager
 }
 
 // NewAPIServer creates a new API server
-func NewAPIServer(hub *Hub, integration *IntegrationManager) *APIServer {
+func NewAPIServer(hub *db.Hub, integration *orchestration.IntegrationManager) *APIServer {
 	return &APIServer{
 		hub:         hub,
 		integration: integration,
@@ -27,7 +30,7 @@ func (a *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // DB method placeholder to satisfy interface
 func (a *APIServer) DB() *sql.DB {
 	if a.hub != nil {
-		return a.hub.db
+		return a.hub.DB()
 	}
 	return nil
 }

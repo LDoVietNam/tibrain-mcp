@@ -19,12 +19,12 @@ const (
 
 // ExperienceEntry represents an experience in episodic memory
 type ExperienceEntry struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Content   string                 `json:"content"`
-	Context   map[string]interface{} `json:"context,omitempty"`
-	Timestamp int64                  `json:"timestamp"`
-	Confidence float64               `json:"confidence,omitempty"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	Content    string                 `json:"content"`
+	Context    map[string]interface{} `json:"context,omitempty"`
+	Timestamp  int64                  `json:"timestamp"`
+	Confidence float64                `json:"confidence,omitempty"`
 }
 
 // CognitiveMemoryManager implements the 3-tier cognitive memory system.

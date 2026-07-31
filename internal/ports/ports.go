@@ -8,9 +8,9 @@ type ToolRequest struct {
 }
 
 type ToolResult struct {
-	Success bool                 `json:"success"`
+	Success bool                   `json:"success"`
 	Data    map[string]interface{} `json:"data"`
-	Error   string               `json:"error,omitempty"`
+	Error   string                 `json:"error,omitempty"`
 }
 
 type PromptEnvelope struct {

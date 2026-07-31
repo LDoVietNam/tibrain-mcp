@@ -11,7 +11,9 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,9 +35,22 @@ const (
 
 // ServerConfig controls the HTTP bind address and public base URL.
 type ServerConfig struct {
-	Host         string `yaml:"host"`
-	Port         int    `yaml:"port"`
+	Host          string `yaml:"host"`
+	Port          int    `yaml:"port"`
 	PublicBaseURL string `yaml:"public_base_url"`
+}
+
+// MCPServerConfig defines configuration for an upstream MCP server.
+type MCPServerConfig struct {
+	Name        string            `yaml:"name"`
+	Transport   string            `yaml:"transport"` // "stdio" or "http"/"sse"
+	Command     string            `yaml:"command,omitempty"`
+	Args        []string          `yaml:"args,omitempty"`
+	URL         string            `yaml:"url,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	Enabled     bool              `yaml:"enabled"`
+	Description string            `yaml:"description,omitempty"`
+	AutoStart   bool              `yaml:"auto_start"`
 }
 
 // MCPConfig controls transport paths and protocol limits.
@@ -48,6 +63,8 @@ type MCPConfig struct {
 	MaxConcurrentCallsPerSession int `yaml:"max_concurrent_calls_per_session"`
 	MaxRequestBytes              int `yaml:"max_request_bytes"`
 	MaxOutputBytes               int `yaml:"max_output_bytes"`
+	// Servers is the list of upstream MCP servers to connect to.
+	Servers []MCPServerConfig `yaml:"servers"`
 }
 
 // AuthConfig controls authentication at the gateway edge.
@@ -62,22 +79,22 @@ type AuthConfig struct {
 
 // TrustedFullConfig gates the trusted_full profile.
 type TrustedFullConfig struct {
-	Enabled          bool     `yaml:"enabled"`
-	AdminIdentities  []string `yaml:"admin_identities"`
-	FilesystemRoots  []string `yaml:"filesystem_roots"`
+	Enabled         bool     `yaml:"enabled"`
+	AdminIdentities []string `yaml:"admin_identities"`
+	FilesystemRoots []string `yaml:"filesystem_roots"`
 }
 
 // PermissionsConfig selects the active profile and gates trusted_full.
 type PermissionsConfig struct {
-	ActiveProfile Profile          `yaml:"active_profile"`
+	ActiveProfile Profile           `yaml:"active_profile"`
 	TrustedFull   TrustedFullConfig `yaml:"trusted_full"`
 }
 
 // AuditConfig controls the audit log.
 type AuditConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	Path           string `yaml:"path"`
-	RedactSecrets  bool   `yaml:"redact_secrets"`
+	Enabled       bool   `yaml:"enabled"`
+	Path          string `yaml:"path"`
+	RedactSecrets bool   `yaml:"redact_secrets"`
 }
 
 // Config is the root typed configuration.
@@ -90,6 +107,13 @@ type Config struct {
 
 	// AllowedRoots is the base allow-list for filesystem tools (non-trusted_full).
 	AllowedRoots []string `yaml:"allowed_roots"`
+
+	// TiBrain-specific legacy fields
+	CLIRegistry    string `yaml:"cli_registry"`
+	HandoffTrack   string `yaml:"handoff_track"`
+	SkillSync      string `yaml:"skill_sync"`
+	IndexKnowledge string `yaml:"index_knowledge"`
+	DataDir        string `yaml:"data_dir"`
 }
 
 // Default returns a safe-by-default configuration. The default profile is
@@ -107,13 +131,19 @@ func Default() *Config {
 			MaxOutputBytes:               4 << 20,
 		},
 		Auth: AuthConfig{
-			Mode:           "bearer",
-			BearerTokenEnv: "TIBRAIN_MCP_BEARER_TOKEN",
-			AllowedOrigins: []string{"https://chatgpt.com", "https://chat.openai.com"},
+			Mode:               "bearer",
+			BearerTokenEnv:     "TIBRAIN_MCP_BEARER_TOKEN",
+			AllowedOrigins:     []string{"https://chatgpt.com", "https://chat.openai.com"},
 			RateLimitPerMinute: 60,
 		},
 		Permissions: PermissionsConfig{ActiveProfile: ProfileOperator},
 		Audit:       AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
+		// Legacy TiBrain defaults
+		CLIRegistry:    "",
+		HandoffTrack:   "",
+		SkillSync:      "",
+		IndexKnowledge: "",
+		DataDir:        "",
 	}
 }
 
@@ -214,6 +244,41 @@ func (c *Config) Validate() error {
 	if c.Audit.Enabled && c.Audit.Path == "" {
 		return fmt.Errorf("audit.enabled but audit.path is empty")
 	}
+
+	// Validate MCP server configurations
+	if err := c.ValidateMCPServers(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateMCPServers checks MCP server configurations including command existence for stdio transport
+func (c *Config) ValidateMCPServers() error {
+	for _, server := range c.MCP.Servers {
+		if !server.Enabled {
+			continue
+		}
+
+		switch server.Transport {
+		case "stdio":
+			if server.Command == "" {
+				return fmt.Errorf("mcp.servers[%s]: stdio transport requires command", server.Name)
+			}
+			// Check if command exists in PATH for stdio transport
+			if _, err := execLookPath(server.Command); err != nil {
+				// Log warning but don't fail - command might be available at runtime
+				// In production mode, you might want to fail here
+				log.Printf("[WARN] MCP server %s: command %q not found in PATH (will fail at runtime if not available)", server.Name, server.Command)
+			}
+		case "http", "sse":
+			if server.URL == "" {
+				return fmt.Errorf("mcp.servers[%s]: http/sse transport requires url", server.Name)
+			}
+		default:
+			return fmt.Errorf("mcp.servers[%s]: invalid transport %q (must be stdio, http, or sse)", server.Name, server.Transport)
+		}
+	}
 	return nil
 }
 
@@ -244,6 +309,11 @@ func parseInt(s string) (int, error) {
 	var n int
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
+}
+
+// execLookPath finds the executable path (wraps exec.LookPath)
+func execLookPath(file string) (string, error) {
+	return exec.LookPath(file)
 }
 
 // RuntimePath resolves a relative runtime path against the working directory

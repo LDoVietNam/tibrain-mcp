@@ -24,13 +24,13 @@ type AuditRecord struct {
 
 // Auditor writes structured, redacted audit records asynchronously.
 type Auditor struct {
-	path    string
-	redact  bool
-	mu      sync.Mutex
-	file    *os.File
-	ch      chan AuditRecord
-	done    chan struct{}
-	once    sync.Once
+	path   string
+	redact bool
+	mu     sync.Mutex
+	file   *os.File
+	ch     chan AuditRecord
+	done   chan struct{}
+	once   sync.Once
 }
 
 // NewAuditor opens (creating dirs) the audit log file and starts the writer

@@ -10,17 +10,17 @@ import (
 type Category string
 
 const (
-	CatRead     Category = "read"      // read/list/search/status
-	CatWrite    Category = "write"     // controlled mutation, non-destructive
+	CatRead     Category = "read"        // read/list/search/status
+	CatWrite    Category = "write"       // controlled mutation, non-destructive
 	CatDestruct Category = "destructive" // delete / stop / restart / privileged
 )
 
 // Guard enforces the active permission profile against tool calls.
 // It fails closed: any unrecognized operator/action/resource is denied.
 type Guard struct {
-	profile       config.Profile
-	adminIDs      map[string]bool
-	trustedArmed  bool
+	profile      config.Profile
+	adminIDs     map[string]bool
+	trustedArmed bool
 }
 
 // NewGuard builds a guard for the active profile.

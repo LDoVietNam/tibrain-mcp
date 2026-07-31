@@ -9,10 +9,10 @@ import (
 
 func TestAudit(t *testing.T) {
 	tests := []struct {
-		name      string
-		files     map[string]string
-		wantPass  bool
-		wantCat   string
+		name     string
+		files    map[string]string
+		wantPass bool
+		wantCat  string
 	}{
 		{
 			name: "clean repo passes",
@@ -25,8 +25,8 @@ func TestAudit(t *testing.T) {
 		{
 			name: ".env with API key flagged",
 			files: map[string]string{
-				"go.mod":      "module test\n",
-				".env":        "API_KEY=sk-proj-abc123def456\n",
+				"go.mod": "module test\n",
+				".env":   "API_KEY=sk-proj-abc123def456\n",
 			},
 			wantPass: false,
 			wantCat:  "secret",

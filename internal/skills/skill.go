@@ -14,25 +14,25 @@ import "context"
 // usage_count
 // version
 type Skill struct {
-    ID          string
-    Name        string
-    Description string
-    IntentPatterns []string
-    Capabilities   []string
-    RiskLevel      string
-    SuccessRate    float64
-    UsageCount     int
-    Version        string
+	ID             string
+	Name           string
+	Description    string
+	IntentPatterns []string
+	Capabilities   []string
+	RiskLevel      string
+	SuccessRate    float64
+	UsageCount     int
+	Version        string
 }
 
 // SkillRegistry manages the collection of available skills
 type SkillRegistry interface {
-    // Register adds a skill to the registry
-    Register(ctx context.Context, skill Skill) error
-    
-    // Get retrieves a skill by ID
-    Get(ctx context.Context, id string) (*Skill, error)
-    
-    // List returns all registered skills
-    List(ctx context.Context) ([]Skill, error)
+	// Register adds a skill to the registry
+	Register(ctx context.Context, skill Skill) error
+
+	// Get retrieves a skill by ID
+	Get(ctx context.Context, id string) (*Skill, error)
+
+	// List returns all registered skills
+	List(ctx context.Context) ([]Skill, error)
 }

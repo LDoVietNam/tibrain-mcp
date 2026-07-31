@@ -1,37 +1,158 @@
+# golangci-lint configuration for TiBrain
+# TiBrain is a Go knowledge service - focus on API handlers, MCP integration, and knowledge management
+
 run:
   timeout: 5m
+  tests: true
+  skip-dirs:
+    - vendor
+    - third_party
+    - testdata
+    - examples
+    - Godeps
+    - builtin
 
 linters:
   enable:
+    # Default linters
     - errcheck
-    - staticcheck
-    - govet
     - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
     - unused
-
-  disable:
-    - funlen
-    - lll
-    - godoc
-    - gochecknoglobals
-    - gochecknoinits
-    - gocognit
-    - gocyclo
-    - godot
+    
+    # Additional linters for API service
+    - gofmt
     - goimports
-    - gomodguard
-    - gomoddirectives
+    - misspell
+    - revive
     - gosec
+    - gocyclo
+    - dupl
+    - goconst
+    - gocritic
+    - prealloc
+    - exportloopref
+    - nilerr
     - noctx
-    - nolintlint
-    - wrapcheck
+    - bodyclose  # Check HTTP response body closed
+    - errname    # Check error names
+    
+  disable:
+    - exhaustivestruct
+    - exhaustruct
+    - goerr113
+    - lll
+    - wsl
+    - godot
+    - varnamelen
+    - funlen      # Function length (too strict for API handlers)
 
 linters-settings:
   errcheck:
-    check-type-assertions: false
-    check-typed-nil: false
+    check-type-assertions: true
+    check-blank: false
+    
+  gocyclo:
+    min-complexity: 12  # Slightly higher for API handlers
+    
+  gosec:
+    includes:
+      - G101
+      - G102
+      - G104
+      - G106
+      - G107
+      - G108
+      - G109
+      - G110
+      - G201
+      - G202
+      - G203
+      - G204
+      - G301
+      - G302
+      - G303
+      - G304
+      - G305
+      - G306
+      - G307
+      - G401
+      - G402
+      - G403
+      - G404
+      - G501
+      - G502
+      - G503
+      - G504
+      - G505
+      - G601
+      - G602
+    excludes:
+      - G104  # Allow some unchecked errors for logging
+      
+  revive:
+    enable-all-rules: false
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+      
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+    ignore-tests: true
+    
+  dupl:
+    threshold: 100
+    
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+  errname:
+    # Error names should end with "Error"
+    pattern: "Error$"
 
 issues:
-  exit-code: 1
-  severity:
-    default-severity: error
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+  exclude-generated: true
+  
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - bodyclose
+        
+    - path: .*\.pb\.go
+      linters:
+        - all

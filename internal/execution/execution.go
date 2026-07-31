@@ -49,8 +49,8 @@ func (t *InMemoryTracer) Trace(executionID, event string, data map[string]interf
 type ExecutionState string
 
 const (
-	StateReceived     ExecutionState = "received"
-	StateIntent       ExecutionState = "intent"
+	StateReceived      ExecutionState = "received"
+	StateIntent        ExecutionState = "intent"
 	StateSkillSelected ExecutionState = "skill_selected"
 	StateToolSelected  ExecutionState = "tool_selected"
 	StatePlanning      ExecutionState = "planning"
@@ -66,19 +66,19 @@ const (
 type RetryErrorType string
 
 const (
-	RetryTransient        RetryErrorType = "transient"
-	RetryPermanent        RetryErrorType = "permanent"
-	RetryPolicyBlocked    RetryErrorType = "policy_blocked"
-	RetryTimeout          RetryErrorType = "timeout"
-	RetryToolUnavailable  RetryErrorType = "tool_unavailable"
+	RetryTransient       RetryErrorType = "transient"
+	RetryPermanent       RetryErrorType = "permanent"
+	RetryPolicyBlocked   RetryErrorType = "policy_blocked"
+	RetryTimeout         RetryErrorType = "timeout"
+	RetryToolUnavailable RetryErrorType = "tool_unavailable"
 )
 
 // RetryPolicy defines retry behavior
 type RetryPolicy struct {
-	MaxAttempts    int
-	BackoffBase    time.Duration
-	BackoffMax     time.Duration
-	BackoffFactor  float64
+	MaxAttempts   int
+	BackoffBase   time.Duration
+	BackoffMax    time.Duration
+	BackoffFactor float64
 }
 
 // DefaultRetryPolicy returns default retry policy
@@ -115,22 +115,22 @@ func pow(base, exp float64) float64 {
 
 // ExecutionContext holds all contextual information for an execution
 type ExecutionContext struct {
-	ExecutionID      string
-	TaskID           string
-	UserGoal         string
-	State            ExecutionState
-	Attempt          int
-	MaxAttempts      int
-	SelectedSkill    string
-	SelectedTools    []string
-	Plan             string
-	Result           interface{}
+	ExecutionID        string
+	TaskID             string
+	UserGoal           string
+	State              ExecutionState
+	Attempt            int
+	MaxAttempts        int
+	SelectedSkill      string
+	SelectedTools      []string
+	Plan               string
+	Result             interface{}
 	VerificationResult *VerificationResult
-	Errors           []error
-	TraceID          string
-	RetryReason      RetryErrorType
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	Errors             []error
+	TraceID            string
+	RetryReason        RetryErrorType
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Executor defines the interface for executing tasks
@@ -152,16 +152,16 @@ func NewExecutionManager() *ExecutionManager {
 func (m *ExecutionManager) Execute(ctx context.Context, input interface{}) (*ExecutionContext, error) {
 	// This is a stub implementation - to be fleshed out in later phases
 	execCtx := &ExecutionContext{
-		ExecutionID:   "exec-" + time.Now().Format("20060102150405"),
-		TaskID:        "task-" + time.Now().Format("20060102150405"),
-		UserGoal:      "placeholder",
-		State:         StateReceived,
-		Attempt:       1,
-		MaxAttempts:   3,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ExecutionID: "exec-" + time.Now().Format("20060102150405"),
+		TaskID:      "task-" + time.Now().Format("20060102150405"),
+		UserGoal:    "placeholder",
+		State:       StateReceived,
+		Attempt:     1,
+		MaxAttempts: 3,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
-	
+
 	return execCtx, nil
 }
 

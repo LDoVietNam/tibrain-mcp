@@ -1,8 +1,10 @@
-package main
+package knowledge
+
+import "github.com/ti/router/tibrain/internal/db"
 
 // KnowledgeIndexer handles knowledge indexing
 type KnowledgeIndexer struct {
-	hub *Hub
+	hub *db.Hub
 }
 
 // KnowledgeIndexOptions configures indexing
@@ -19,14 +21,14 @@ type KnowledgeIndexSource struct {
 
 // KnowledgeIndexResult represents indexing results
 type KnowledgeIndexResult struct {
-	Indexed  int
-	Skipped  int
-	Errors   []string
-	Sources  int
+	Indexed int
+	Skipped int
+	Errors  []string
+	Sources int
 }
 
 // NewKnowledgeIndexer creates a new knowledge indexer
-func NewKnowledgeIndexer(hub *Hub) *KnowledgeIndexer {
+func NewKnowledgeIndexer(hub *db.Hub) *KnowledgeIndexer {
 	return &KnowledgeIndexer{hub: hub}
 }
 

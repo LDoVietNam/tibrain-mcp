@@ -117,8 +117,8 @@ func runCaptured(cmd *exec.Cmd, timeout time.Duration) (*mcp.CallToolResult, err
 	runErr := cmd.Run()
 	dur := time.Since(start)
 	out := map[string]interface{}{
-		"stdout":  truncate(stdout.String()),
-		"stderr":  truncate(stderr.String()),
+		"stdout":   truncate(stdout.String()),
+		"stderr":   truncate(stderr.String()),
 		"duration": dur.Round(time.Millisecond).String(),
 	}
 	if runErr != nil {

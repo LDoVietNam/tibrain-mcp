@@ -10,9 +10,9 @@ type Tracer interface {
 
 // TraceEvent represents a single trace event
 type TraceEvent struct {
-	Timestamp time.Time      `json:"timestamp"`
-	Event     string         `json:"event"`
-	Data      interface{}    `json:"data"`
+	Timestamp time.Time   `json:"timestamp"`
+	Event     string      `json:"event"`
+	Data      interface{} `json:"data"`
 }
 
 // InMemoryTracer implements a simple in-memory tracer

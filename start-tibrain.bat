@@ -21,18 +21,19 @@ REM Wait a moment
 timeout /t 2 /nobreak >nul
 
 echo [TiBrain] Starting TiBrain service...
-if exist build\tibrain.exe (
-    start /b build\tibrain.exe
+if exist Z:\03_DATA\bin\tibrain.exe (
+    start /b Z:\03_DATA\bin\tibrain.exe
 ) else (
+    echo [TiBrain] Binary not found at Z:\03_DATA\bin\tibrain.exe
     echo [TiBrain] Building first...
     set GOOS=windows
     set GOARCH=amd64
-    go build -o build\tibrain.exe .
+    go build -o Z:\03_DATA\bin\tibrain.exe .
     if errorlevel 1 (
         echo [TiBrain] Build failed!
         exit /b 1
     )
-    start /b build\tibrain.exe
+    start /b Z:\03_DATA\bin\tibrain.exe
 )
 
 echo [TiBrain] Service started on port 3005

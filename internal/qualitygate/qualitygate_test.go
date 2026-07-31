@@ -17,14 +17,14 @@ func writeFile(t *testing.T, dir, name, content string) {
 
 func TestQualityGate(t *testing.T) {
 	tests := []struct {
-		name    string
-		files   map[string]string
+		name     string
+		files    map[string]string
 		wantPass bool
 	}{
 		{
 			name: "clean repo passes all steps",
 			files: map[string]string{
-				"go.mod": "module test\n\ngo 1.25\n",
+				"go.mod":  "module test\n\ngo 1.25\n",
 				"main.go": "package main\n\nfunc main() {}\n",
 			},
 			wantPass: true,
@@ -32,7 +32,7 @@ func TestQualityGate(t *testing.T) {
 		{
 			name: "build failure skips test step",
 			files: map[string]string{
-				"go.mod": "module test\n\ngo 1.25\n",
+				"go.mod":  "module test\n\ngo 1.25\n",
 				"main.go": "package main\n\nfunc main() { syntax error }\n",
 			},
 			wantPass: false,
