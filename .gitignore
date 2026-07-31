@@ -7,7 +7,6 @@
 
 # Hard block: directories (match at any depth)
 **/node_modules/
-**/.github/
 **/.runtime/
 **/.kilo/
 **/.ti-audit/
@@ -19,6 +18,11 @@
 **/data/
 **/.claude/
 **/.codex/
+
+# GitHub CI whitelist (keep .github/ tracked)
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
 
 # TiBrain essentials (whitelist)
 !main.go
