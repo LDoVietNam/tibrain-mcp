@@ -26,6 +26,21 @@ func (m *Manager) addTool(name, desc string, cat security.Category, tool mcp.Too
 // registerAllTools wires every real, implemented tool. Unimplemented tools are
 // intentionally NOT registered (no placeholder/mock success).
 func (m *Manager) registerAllTools() {
+	// ---- Memory (knowledge retrieval) ----
+	m.addTool("memory.search", "Search shared knowledge entries from memory_index.yaml with confidence filtering.", security.CatRead,
+		mcp.NewTool("memory.search",
+			mcp.WithDescription("Query shared memory knowledge base with domain + confidence-aware filtering"),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Search term to match entries")),
+			mcp.WithNumber("min_confidence", mcp.Description("Minimum confidence score (0.0-1.0), default 0.8")),
+			mcp.WithString("domain", mcp.Description("Optional: filter to specific domain (github_auth, git_workflow, go_patterns, tibrain_arch, dev_environment)")),
+			mcp.WithNumber("limit", mcp.Description("Max results (default 10)")),
+		), m.handleMemorySearch)
+
+	m.addTool("memory.list_domains", "List available memory domains with confidence scores.", security.CatRead,
+		mcp.NewTool("memory.list_domains",
+			mcp.WithDescription("List all indexed knowledge domains from memory_index.yaml"),
+		), m.handleMemoryListDomains)
+
 	// ---- Filesystem (read) ----
 	m.addTool("fs.read_file", "Read a file within an allowed root. Read-only, side-effect free.", security.CatRead,
 		mcp.NewTool("fs.read_file",
