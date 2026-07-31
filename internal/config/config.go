@@ -97,6 +97,16 @@ type AuditConfig struct {
 	RedactSecrets bool   `yaml:"redact_secrets"`
 }
 
+// RAGConfig controls RAG retrieval and query caching.
+type RAGConfig struct {
+	// QueryCacheTTL is how long a cached RAG query result stays fresh
+	// before a background re-population. Default 5 minutes.
+	QueryCacheTTL time.Duration `yaml:"query_cache_ttl"`
+	// QueryCacheBurst controls how many concurrent cache misses
+	// are allowed before single-flight dedup. Default 64.
+	QueryCacheBurst int `yaml:"query_cache_burst"`
+}
+
 // Config is the root typed configuration.
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
@@ -104,6 +114,7 @@ type Config struct {
 	Auth        AuthConfig        `yaml:"auth"`
 	Permissions PermissionsConfig `yaml:"permissions"`
 	Audit       AuditConfig       `yaml:"audit"`
+	RAG         RAGConfig         `yaml:"rag"`
 
 	// AllowedRoots is the base allow-list for filesystem tools (non-trusted_full).
 	AllowedRoots []string `yaml:"allowed_roots"`
@@ -137,6 +148,10 @@ func Default() *Config {
 			RateLimitPerMinute: 60,
 		},
 		Permissions: PermissionsConfig{ActiveProfile: ProfileOperator},
+		RAG: RAGConfig{
+			QueryCacheTTL:      5 * time.Minute,
+			QueryCacheBurst:    64,
+		},
 		Audit:       AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
 		// Legacy TiBrain defaults
 		CLIRegistry:    "",
