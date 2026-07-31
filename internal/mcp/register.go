@@ -467,4 +467,29 @@ func (m *Manager) registerAllTools() {
 			mcp.WithDescription("Returns recent handoff log entries."),
 			mcp.WithNumber("limit", mcp.Description("Max entries (default 10)")),
 		), m.handleOpsRecentHandoffs)
+
+	m.addTool("checkpoint.save", "Save session state to checkpoint for resume. Read-only.", security.CatRead,
+		mcp.NewTool("checkpoint.save",
+			mcp.WithDescription("Writes checkpoint.md + flush learnings to memory. Resume via actor(context=\"state\")."),
+			mcp.WithString("session_id", mcp.Required(), mcp.Description("Session to checkpoint")),
+			mcp.WithString("progress_summary", mcp.Description("Progress to save")),
+			mcp.WithString("learnings", mcp.Description("Key learnings to persist")),
+		), m.handleCheckpointSave)
+
+	m.addTool("subagent.flush", "Auto-flush subagent state at 60% context. Read-only.", security.CatRead,
+		mcp.NewTool("subagent.flush",
+			mcp.WithDescription("Check context %, checkpoint if >=60%. Used by subagents for context management."),
+			mcp.WithString("session_id", mcp.Required(), mcp.Description("Subagent session ID")),
+			mcp.WithNumber("context_percent", mcp.Description("Current context usage %")),
+			mcp.WithString("learnings", mcp.Description("Learnings to flush")),
+			mcp.WithString("parent_actor_id", mcp.Description("Parent to signal after flush")),
+		), m.handleSubagentFlush)
+
+	m.addTool("memory.flush", "Quick learnings flush to global MEMORY.md. Read-only.", security.CatRead,
+		mcp.NewTool("memory.flush",
+			mcp.WithDescription("Append learnings to global/MEMORY.md. Auto-promotion eligible."),
+			mcp.WithString("domain", mcp.Required(), mcp.Description("Knowledge domain key")),
+			mcp.WithString("content", mcp.Required(), mcp.Description("Learning content to append")),
+			mcp.WithNumber("confidence", mcp.Description("Confidence score 0.8-0.95")),
+		), m.handleMemoryFlush)
 }
