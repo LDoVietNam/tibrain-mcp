@@ -14,6 +14,94 @@ import (
 	"time"
 )
 
+// splitSQLStatements splits SQL content by semicolons, trimming whitespace.
+// Strips full-line and inline trailing -- comments, and respects BEGIN...END
+// blocks so that semicolons inside triggers/procedures are not treated as
+// statement separators.
+func splitSQLStatements(content string) []string {
+	lines := strings.Split(content, "\n")
+	var filtered []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		// Strip inline trailing comment ("... -- comment") so that the
+		// code portion before it is preserved and the comment portion is
+		// not mistaken for SQL.
+		if idx := strings.Index(line, "--"); idx != -1 {
+			line = line[:idx]
+		}
+		filtered = append(filtered, line)
+	}
+	joined := strings.Join(filtered, "\n")
+
+	// Split by ';' but respect BEGIN...END blocks.
+	var result []string
+	var current strings.Builder
+	inBeginBlock := false
+	for i := 0; i < len(joined); {
+		// Check for BEGIN/END keywords at word boundary (case-insensitive).
+		if !inBeginBlock && hasWordBoundary(joined, "BEGIN", i) {
+			// Look ahead to confirm this is a BEGIN that starts a block
+			// (e.g. "BEGIN" or "BEGIN TRANS..." vs "BEGIN"). For SQLite
+			// trigger bodies, BEGIN is followed by content before END.
+			inBeginBlock = true
+		}
+		if inBeginBlock && hasWordBoundary(joined, "END", i) {
+			inBeginBlock = false
+		}
+		if joined[i] == ';' && !inBeginBlock {
+			stmt := strings.TrimSpace(current.String())
+			if stmt != "" {
+				result = append(result, stmt+";")
+			}
+			current.Reset()
+			i++
+			continue
+		}
+		current.WriteByte(joined[i])
+		i++
+	}
+	// Append trailing statement if any.
+	last := strings.TrimSpace(current.String())
+	if last != "" {
+		result = append(result, last+";")
+	}
+	return result
+}
+
+// hasWordBoundary checks if the substring at position i in s equals word
+// (case-insensitive) with word boundaries (non-letter or start/end).
+func hasWordBoundary(s, word string, pos int) bool {
+	if pos < 0 || pos+len(word) > len(s) {
+		return false
+	}
+	substr := s[pos : pos+len(word)]
+	if !strings.EqualFold(substr, word) {
+		return false
+	}
+	// Check char before.
+	if pos > 0 {
+		prev := s[pos-1]
+		if isAlphaByte(prev) {
+			return false
+		}
+	}
+	// Check char after.
+	if pos+len(word) < len(s) {
+		next := s[pos+len(word)]
+		if isAlphaByte(next) {
+			return false
+		}
+	}
+	return true
+}
+
+func isAlphaByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
+
 // Helper function to check if string is numeric
 func isNumeric(s string) bool {
 	_, err := strconv.Atoi(s)
@@ -167,13 +255,28 @@ func ApplyMigrations(db *sql.DB) error {
 		}
 		fmt.Printf("SQL preview: %q\n", sqlPreview)
 
-		// Execute migration
-		result, err := db.Exec(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to execute migration %s: %w", file.Name(), err)
+		// Execute migration — split by ';' to handle "duplicate column name" on ALTER TABLE
+		// SQLite <3.35 doesn't support IF NOT EXISTS on ALTER TABLE, so we tolerate
+		// duplicate column errors (safe — column already exists from prior migration).
+		statements := splitSQLStatements(string(content))
+		for _, s := range statements {
+			if s == "" {
+				continue
+			}
+			result, err := db.Exec(s)
+			if err != nil && strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("failed to execute migration %s: %w", file.Name(), err)
+			}
+			var rowsAffected int64
+			func() {
+				defer func() { recover() }()
+				rowsAffected, _ = result.RowsAffected()
+			}()
+			fmt.Printf("Executed migration %s successfully, rows affected: %d\n", file.Name(), rowsAffected)
 		}
-		rowsAffected, _ := result.RowsAffected()
-		fmt.Printf("Executed migration %s successfully, rows affected: %d\n", file.Name(), rowsAffected)
 
 		// Record migration as applied
 		name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
