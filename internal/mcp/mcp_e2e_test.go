@@ -357,6 +357,10 @@ func TestE2E_Ping(t *testing.T) {
 
 func TestE2E_InvalidAuth(t *testing.T) {
 	// Test that missing/invalid auth is rejected
+	// In no-auth mode, auth is disabled so this test is not applicable
+	if isNoAuthMode() {
+		t.Skip("Skipping auth test in no-auth mode")
+	}
 	skipIfNoToken(t)
 	client := &http.Client{Timeout: testTimeout}
 
