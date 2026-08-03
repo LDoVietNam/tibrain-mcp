@@ -371,6 +371,163 @@ func waitForProcessExit(t *testing.T, pid int, timeout time.Duration) {
 }
 
 // ---------------------------------------------------------------------------
+// handleProcessList error path (tasklist unavailable / fails)
+// ---------------------------------------------------------------------------
+
+func TestHandleProcessList_ListFailed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("process.list uses Windows tasklist; skipping on non-Windows")
+	}
+	ctx := context.Background()
+	m := procManager()
+
+	// tasklist is not on PATH under a sanitized PATH; exec.Command("tasklist")
+	// then fails, and the handler must surface "list failed".
+	orig := os.Getenv("PATH")
+	t.Setenv("PATH", "")
+	defer os.Setenv("PATH", orig)
+
+	req := callTool(t, "process.list", nil)
+	res, err := m.handleProcessList(ctx, req)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error when tasklist is unavailable")
+	}
+	if !strings.Contains(strings.ToLower(procText(t, res)), "list failed") {
+		t.Errorf("expected 'list failed', got: %s", procText(t, res))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleProcessInspect with a running pid owned by this test process.
+// ---------------------------------------------------------------------------
+
+func TestHandleProcessInspect_RunningPid(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("process.inspect uses Windows tasklist; skipping on non-Windows")
+	}
+	ctx := context.Background()
+	m := procManager()
+
+	// os.Getpid is the current Go test process; it is guaranteed running.
+	req := callTool(t, "process.inspect", map[string]any{"pid": os.Getpid()})
+	res, err := m.handleProcessInspect(ctx, req)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", procText(t, res))
+	}
+	var info map[string]any
+	if err := json.Unmarshal([]byte(procText(t, res)), &info); err != nil {
+		t.Fatalf("unmarshal %q: %v", procText(t, res), err)
+	}
+	if info["pid"] != float64(os.Getpid()) {
+		t.Errorf("expected pid=%d, got %v", os.Getpid(), info["pid"])
+	}
+	if info["running"] != true {
+		t.Errorf("expected running=true, got %v", info["running"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleServiceRestart — exercises the start-after-stop failure branch by
+// stopping a fake service (fails on sc stop) which returns "stop failed".
+// The restart handler returns on the FIRST error, so this covers line 122-124.
+// To cover the second error branch (sc start fails after sc stop succeeds) we
+// cannot easily make sc stop succeed on a fake service, so we assert the
+// "stop failed" path here which is the reachable branch.
+// ---------------------------------------------------------------------------
+
+func TestHandleServiceRestart_StopFailedBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("service handlers use Windows sc; skipping on non-Windows")
+	}
+	ctx := context.Background()
+	m := procManager()
+
+	// A fake service: sc stop fails, so restart returns "stop failed" without
+	// ever attempting sc start. This covers the sc stop error branch.
+	req := callTool(t, "service.restart", map[string]any{
+		"name": "this-service-does-not-exist-xyz123",
+	})
+	res, err := m.handleServiceRestart(ctx, req)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error for nonexistent service restart")
+	}
+	if !strings.Contains(strings.ToLower(procText(t, res)), "stop failed") {
+		t.Errorf("expected 'stop failed', got: %s", procText(t, res))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleNetworkPorts error path (netstat unavailable)
+// ---------------------------------------------------------------------------
+
+func TestHandleNetworkPorts_NetstatFailed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("network.ports uses Windows netstat; skipping on non-Windows")
+	}
+	ctx := context.Background()
+	m := procManager()
+
+	orig := os.Getenv("PATH")
+	t.Setenv("PATH", "")
+	defer os.Setenv("PATH", orig)
+
+	req := callTool(t, "network.ports", nil)
+	res, err := m.handleNetworkPorts(ctx, req)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error when netstat is unavailable")
+	}
+	if !strings.Contains(strings.ToLower(procText(t, res)), "netstat failed") {
+		t.Errorf("expected 'netstat failed', got: %s", procText(t, res))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// processExists error branch (tasklist fails)
+// ---------------------------------------------------------------------------
+
+func TestProcessExists_TasklistFailed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("processExists uses Windows tasklist; skipping on non-Windows")
+	}
+	orig := os.Getenv("PATH")
+	t.Setenv("PATH", "")
+	defer os.Setenv("PATH", orig)
+
+	// With an empty PATH, tasklist cannot be found, so processExists must
+	// return false for any pid (the err != nil branch on line 78).
+	if processExists(os.Getpid()) {
+		t.Error("processExists should be false when tasklist is unavailable")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // handleServiceStatus (service.status)
 // ---------------------------------------------------------------------------
 

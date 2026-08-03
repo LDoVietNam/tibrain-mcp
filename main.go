@@ -21,10 +21,16 @@ import (
 )
 
 func main() {
-	cfg := config.Default()
+	cfg, err := config.Load("")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	// Initialize database hub
-	dataDir := getEnvOrDefault("TIBRAIN_DATA_DIR", "Z:\\03_DATA\\tibrain-database")
+	dataDir := cfg.DataDir
+	if dataDir == "" {
+		dataDir = getEnvOrDefault("TIBRAIN_DATA_DIR", "Z:\\03_DATA\\tibrain-database")
+	}
 	hub, err := db.NewHub(dataDir)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)

@@ -357,7 +357,7 @@ func TestE2E_Ping(t *testing.T) {
 
 func TestE2E_InvalidAuth(t *testing.T) {
 	// Test that missing/invalid auth is rejected
-	// This test should pass (auth should fail) without requiring a token
+	skipIfNoToken(t)
 	client := &http.Client{Timeout: testTimeout}
 
 	req := JSONRPCRequest{

@@ -3,7 +3,7 @@
 
 tibrain:
   port: 3005
-  data_dir: "data"
+  data_dir: "${TIBRAIN_DATA_DIR}"
 
 cli_registry:
   enabled: true
