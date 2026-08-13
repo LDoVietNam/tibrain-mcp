@@ -14,7 +14,7 @@ TiBrain là dịch vụ **knowledge service** và **control plane** trung tâm t
 - **RAG (Retrieval-Augmented Generation)** để truy xuấtKnowledge Base thông minh.
 - **Agent registry** đăng ký và quản lý các agent trong hệ thống.
 
-TiBrain hoạt động như trung tâm điều phối, cho phép các thành phần khác (OmniRoute, Router Agent, v.v.) tương tác qua một giao diện thống nhất.
+TiBrain hoạt động như trung tâm điều phối, cho phép các thành phần khác (Router Agent, OpenClaw Gateway, v.v.) tương tác qua một giao diện thống nhất.
 
 ---
 
@@ -119,7 +119,7 @@ node cli/workflows/go-dev.js --step=test --targetDir=.
 | `/api/v2/retrieve`                 | POST       | Truy vấn trực tiếp vào Knowledge Store (tương tự RAG nhưng không có bước generation). |
 | `/api/v2/runtime/registry`         | GET        | Registry thời gian chạy: danh sách các instance agent đang hoạt động.   |
 
-> **Lưu ý:** Không kết nối trực tiếp tới OmniRoute (`:1807`) hoặc Router Agent (`:1806`). Todas các tương tác giữa các thành phần phải qua **Tirouter Gateway** tại cổng `:3004`.
+> **Lưu ý:** Không kết nối trực tiếp tới OpenClaw Gateway (`:1807`) hay Router Agent (`:1806`). Tất cả tương tác giữa các thành phần phải qua **Tirouter Gateway** tại cổng `:3004`.
 
 ---
 

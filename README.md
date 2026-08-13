@@ -73,6 +73,16 @@ TiBrain cung cấp các tool filesystem qua MCP SSE:
 | `http://localhost:3005/mcp` | MCP SSE endpoint |
 | `https://tibrain.trepremium.online/mcp` | Public MCP endpoint |
 
+### Environment Variables
+
+| Variable | Default | Mô tả |
+| --- | --- | --- |
+| `MCP_SERVER_NAME` | `tibrain` | Tên MCP server cho Claude Code |
+| `MCP_TIMEOUT_MS` | `10000` | Timeout cho MCP requests (ms) |
+| `PORT` | `3005` | Port server chạy |
+| `TIBRAIN_DATA_DIR` | `Z:\03_DATA\tibrain-database` | Thư mục dữ liệu SQLite |
+| `TIBRAIN_DB_DRIVER` | `sqlite3` | Driver database (sqlite3/postgres) |
+
 ### Test Tools
 
 ```powershell
@@ -82,6 +92,8 @@ curl http://localhost:3005/health
 # List tools via SSE
 curl http://localhost:3005/mcp
 ```
+
+Xem `docs/TOOLS.md` để biết danh sách đầy đủ các tools MCP (fs.*、shell.*、process.*、git.*、http.*、db.*、browser.*、workflow.*).
 
 ---
 
