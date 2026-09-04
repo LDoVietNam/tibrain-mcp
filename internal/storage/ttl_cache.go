@@ -40,8 +40,7 @@ func (c *TTLCache) Get(key string) (interface{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	// A zero expiresAt means the entry never expires (zero or negative default TTL).
-	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
+	if time.Now().After(e.expiresAt) {
 		return nil, false
 	}
 	return e.value, true
@@ -108,10 +107,6 @@ func (c *TTLCache) cleanupExpired() {
 	defer c.mu.Unlock()
 	now := time.Now()
 	for k, e := range c.items {
-		// Skip entries that never expire (zero expiresAt).
-		if e.expiresAt.IsZero() {
-			continue
-		}
 		if now.After(e.expiresAt) {
 			delete(c.items, k)
 		}

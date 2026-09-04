@@ -1,179 +1,133 @@
-# TiBrain - Knowledge Service & Control Plane
+# Tibrain Agent Definitions
 
-**Phiên bản:** 1.0.0  
-**Cập nhật:** 2026-07-27  
+This document contains the technical specifications for TiBrain agents. All agent definitions, endpoint details, and implementation requirements are documented here.
 
----
+## Agent Definitions
 
-## 1. Giới thiệu
+### tibrain-mcp-hub
 
-TiBrain là dịch vụ **knowledge service** và **control plane** trung tâm trong hệ sinh thái Ti. Nó cung cấp:
+- **Description**: MCP hub server for TiBrain, manages MCP connections and protocol handling
+- **Tools**: read, write, fs
+- **Port**: 3005 (MCP SSE)
+- **Protocol**: MCP HTTP/SSE
+- **Authentication**: Session-based (via TiBrain session cookies)
+- **Key responsibilities**:
+  - Manage MCP connection lifecycle
+  - Handle protocol version negotiation
+  - Route MCP requests to appropriate handlers
+  - Manage session state for agent communication
 
-- **REST API** để truy xuất kiến thức, công cụ và sổ đăng ký.
-- **MCP endpoint** làm cầu nối giao thức Model Context Protocol.
-- **RAG (Retrieval-Augmented Generation)** để truy xuấtKnowledge Base thông minh.
-- **Agent registry** đăng ký và quản lý các agent trong hệ thống.
+### tibrain-api-server
 
-TiBrain hoạt động như trung tâm điều phối, cho phép các thành phần khác (Router Agent, OpenClaw Gateway, v.v.) tương tác qua một giao diện thống nhất.
+- **Description**: REST API server for TiBrain services
+- **Tools**: rest-api, auth
+- **Port**: 3004 (HTTP)
+- **Protocol**: HTTP/HTTPS
+- **Authentication**: API key or session token based
+- **Key endpoints**:
+  - `/api/v2/runtime/prompts` - Prompt configuration
+  - `/api/v1/prompt/preflight` - Prompt validation
+  - `/api/v1/prompt/feedback` - Prompt feedback collection
+  - `/api/v2/runtime/prompts` - Runtime prompt configuration
+  - `/api/v1/secrets/upsert` - Secret management
+  - `/v1/secrets/resolve` - Secret resolution
 
----
+### tibrain-tirouter-integration
 
-## 2. Kết nối
-
-| Phương thức | Endpoint                               | Mô tả                                     |
-|------------|----------------------------------------|-------------------------------------------|
-| **REST API**   | `http://localhost:3005/api/*`         | Truy cập knowledge, RAG, registry, tools. |
-| **MCP**        | `http://localhost:3005/mcp`           | Cầu nối giao thức Model Context Protocol. |
-| **Health Check**| `http://localhost:3005/api/health`    | Kiểm tra tình trạng hoạt động của dịch vụ. |
-
----
-
-## 3. Xây dựng (Build)
-
-```powershell
-# Chuyển vào thư mục dự án
-cd Z:\01_PROJECTS\apps\tibrain
-
-# Biên dịch bằng Go
-go build -o tibrain.exe main.go
-
-# Hoặc sử dụng script hỗ trợ
-.\build.ps1
-```
-
----
-
-## 4. Khởi động (Run)
-
-```powershell
-# Sử dụng script khởi động
-.\start-tibrain.ps1
-
-# Hoặc chạy trực tiếp chỉ định port (mặc định 3005)
-.\tibrain.exe --port 3005
-```
+- **Description**: TiRouter integration agent for provider routing and resilience
+- **Tools**: read, write, bash, grep
+- **Port**: 3004 (TiRouter HTTP API)
+- **Responsibilities**:
+  - Provider routing management
+  - Resilience pattern implementation
+  - Health monitoring
+  - Configuration management
+  - Authentication token rotation
 
 ---
 
-## 5. Cấu trúc dự án
+## Agent Registration Protocol
 
-```
-tibrain/
-├── main.go              # Điểm vào ứng dụng
-├── api_server.go        # Máy chủ REST API
-├── mcp_hub_client.go    # MCP client (kết nối tới hub)
-├── config.yaml          # Tập tin cấu hình (cổng, kết nối DB, v.v.)
-├── build.ps1            # Script biên dịch tự động
-├── start-tibrain.ps1    # Script khởi động dịch vụ
-└── AGENTS.md            # Tài liệu này
-
-cli/
-├── commands/
-│   ├── go-review.md     # Review code (vet, lint, format)
-│   ├── go-build.md      # Build binary
-│   └── go-test.md       # Run tests với race detection
-├── workflows/
-│   └── go-dev.js        # Workflow gộp review + build + test
-└── skills/
-    └── go-dev-workflows.md  # Skill tích hợp cho Go development
-```
+1. **Registration**: Agents must register with TiBrain MCP hub on startup
+2. **Authentication**: All agents must authenticate using TiBrain credentials
+3. **Heartbeat**: Agents must send heartbeat every 30 seconds
+4. **Graceful shutdown**: Agents must register for cleanup on SIGTERM
+5. **Versioning**: Agents must report version via `/mcp/protocol`
 
 ---
 
-## 6. Go Development Workflow
+## Agent Dispatch Protocol
 
-Workflow `go-dev` tự động thực hiện 3 bước:
-
-```bash
-# Chạy workflow đầy đủ
-node cli/workflows/go-dev.js --targetDir=.
-
-# Hoặc chạy từng bước riêng
-node cli/workflows/go-dev.js --step=review --targetDir=.
-node cli/workflows/go-dev.js --step=build --targetDir=.
-node cli/workflows/go-dev.js --step=test --targetDir=.
-```
-
-**Handoff Logging**: Mỗi step ghi log vào `.mimocode/handoff/`:
-- `plan-{timestamp}.md`: Kế hoạch thực hiện
-- `review-{timestamp}.md`: Kết quả review (vet, lint, format)
-- `build-{timestamp}.md`: Kết quả build
-- `test-{timestamp}.md`: Kết quả test
-
-**Auto-skip Logic**:
-- Build sẽ bị bỏ qua nếu review phát hiện lỗi
-- Test sẽ bị bỏ qua nếu build thất bại
+1. **Classification**: Determine task complexity (1-10 scale)
+2. **Agent selection**: Match task to appropriate agent pool
+3. **Context budget**: Check memory usage before dispatch
+4. **Execution**: Run agents with appropriate resource allocation
+5. **Monitoring**: Use loop-status to track execution progress
+6. **Merge results**: Synthesize results via execution-plans
 
 ---
 
-## 7. API Endpoints chi tiết
+## Agent Dispatch Patterns
 
-| Endpoint                           | Phương thức | Mô tả                                                                 |
-|------------------------------------|------------|-----------------------------------------------------------------------|
-| `/api/health`                      | GET        | Trả về trạng thái sức khỏe (OK / lỗi).                                 |
-| `/api/status`                      | GET        | Cung cấp thông tin hệ thống: version, uptime, resource usage.          |
-| `/api/tools`                       | GET        | Danh sách công cụ đã đăng ký (name, description, version).             |
-| `/api/agents`                      | GET        | Danh sách agent đã đăng ký (id, name, type, endpoint, status).         |
-| `/api/knowledge`                   | GET        | Thông tin tổng quan về Knowledge Base (số lượng document, chỉ mục).   |
-| `/api/rag/query`                   | POST       | Truy vấn RAG: body `{ "query": "<câu hỏi>", "top_k": 5 }`. Trả về các đoạn văn bản liên quan. |
-| `/api/v2/retrieve`                 | POST       | Truy vấn trực tiếp vào Knowledge Store (tương tự RAG nhưng không có bước generation). |
-| `/api/v2/runtime/registry`         | GET        | Registry thời gian chạy: danh sách các instance agent đang hoạt động.   |
-
-> **Lưu ý:** Không kết nối trực tiếp tới OpenClaw Gateway (`:1807`) hay Router Agent (`:1806`). Tất cả tương tác giữa các thành phần phải qua **Tirouter Gateway** tại cổng `:3004`.
+| Pattern | Use Case | Max Agents | Tools |
+|---------|----------|------------|-------|
+| Fan-out | Independent tasks | 4+ | dispatching-parallel-agents |
+| Pipeline | Sequential workflows | 3 | workflow |
+| Parallel review | Multi-perspective code review | 8 | parallel |
+| Security audit | Sequential security checks | 2 | sequential |
 
 ---
 
-## 8. Cấu hình (Configuration)
+## Memory Integration
 
-Tập tin `config.yaml` chứa cáckhóa chính:
-
-```yaml
-server:
-  port: 3005               # Port REST API
-  host: "0.0.0.0"
-
-mcp:
-  endpoint: "http://localhost:3005/mcp"
-  timeout: "10s"
-
-knowledge:
-  path: "./data/kb"        # Thư mục lưu trữ các tài liệu knowledge
-  index_type: "sqlite"     # Hoặc "bolt", "memory"
-
-logging:
-  level: "info"
-  format: "json"
-```
-
-Các tham số có thể được ghi đè qua biến môi trường hoặc tham số dòng lệnh (`--port`, `--config`, …).
+| Memory Scope | Agent Type | Sync Method |
+|--------------|------------|-------------|
+| L1 (Hot) | All agents | Session-scoped, auto-save |
+| L2 (Warm) | Tibrain-memory-agent | Periodic batch flush |
+| L3 (Cold) | All agents | On-demand sync via TiBrain |
 
 ---
 
-## 9. Quy trình phát triển
+## Claude 5 Model Selection
 
-1. **Fork** repository và tạo nhánh tính năng (`git checkout -b feature/ten-feature`).
-2. Tuân thủ **Conventional Commits** cho thông điệp commit.
-3. Viết **unit test** cho mọi hàm mới (`go test ./...`).
-4. Chạy **lint** (`golangci-lint run`) trước khi tạo pull request.
-5. Đảm bảo **docstrings** và **godoc** được cập nhật.
-6. Gửi pull request và chờ review từ đội ngũ maintainer.
-
----
-
-## 10. Đóng góp (Contributing)
-
-Chúng tôi chào mừng sự đóng góp từ cộng đồng. Để đóng góp:
-
-- Báo cáo vấn đề qua **Issues**.
-- Đề xuất tính năng hoặc cải tiến qua **Pull Request**.
-- Tuân thủ [CODE_OF_CONDUCT.md] (nếu có) và [CONTRIBUTING.md].
+| Task Type | Model | Context | Agents |
+|-----------|-------|---------|--------|
+| Quick fix | Haiku 4.5 | 50% | 2 |
+| Feature dev | Sonnet 5 | 70% | 8 |
+| Complex system | Opus 5 | 80% | 16 |
+| Research | Fable 5 | 60% | 4 |
+| Security audit | Opus 5 | 80% | 4 |
+| Code review | Opus 5 | 80% | 8 |
+| Memory ops | Sonnet 5 | 70% | 8 |
+| Multi-provider | Opus 5 | 80% | 8 |
 
 ---
 
-## 11. Giấy phép (License)
+## Memory-Aware Agent Design
 
-Dự án được phát hành dưới giấy phép **MIT** – xem tệp `LICENSE` để biết chi tiết.
+- **Isolation**: Each agent runs in isolated worktree
+- **Memory scoping**: Agents access only their scope (episodic/tiered/global/notes)
+- **Context budget**: Monitor and flush at 80% context usage
+- **Error recovery**: Auto-retry (max 3) → escalate to reviewer
+- **Model switching**: Timeout → cheaper model (Opus → Sonnet → Haiku)
 
 ---
 
-*Tài liệu này được tạo tự động và có thể được cập nhật khi có thay đổi về phiên bản hoặc cấu trúc dự án.*
+## 🛡️ Security Requirements
+
+- **Agent isolation**: Mandatory worktree isolation
+- **Credential scoping**: Per-agent least privilege
+- **Audit logging**: All agent actions logged to TiBrain episodic
+- **Settings.json**: Per-component permissions enforcement
+- **MCP scopes**: Component-specific filesystem access
+
+---
+
+## 📌 Verification Gates
+
+- [ ] Agent registration verified via MCP
+- [ ] Health check passed (curl localhost:3004/healthz)
+- [ ] Memory sync verified (tibain read/write)
+- [ ] Agent dispatch tested with parallel tasks
+- [ ] Context budget respected (<80% threshold)
+- [ ] Security scan passed (security-scan skill)

@@ -1,9 +1,6 @@
 package trace
 
-import (
-	"sync"
-	"time"
-)
+import "time"
 
 // Tracer defines the interface for tracing execution steps
 type Tracer interface {
@@ -20,7 +17,6 @@ type TraceEvent struct {
 
 // InMemoryTracer implements a simple in-memory tracer
 type InMemoryTracer struct {
-	mu     sync.RWMutex
 	events map[string][]TraceEvent
 }
 
@@ -33,8 +29,6 @@ func NewInMemoryTracer() *InMemoryTracer {
 
 // Trace records a trace event for the given execution ID
 func (t *InMemoryTracer) Trace(executionID, event string, data map[string]interface{}) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.events[executionID] = append(t.events[executionID], TraceEvent{
 		Timestamp: time.Now(),
 		Event:     event,
@@ -43,14 +37,9 @@ func (t *InMemoryTracer) Trace(executionID, event string, data map[string]interf
 }
 
 // GetTrace retrieves all events for a given execution ID
-// Returns a copy to prevent caller mutation of the internal slice.
 func (t *InMemoryTracer) GetTrace(executionID string) []TraceEvent {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
 	if events, exists := t.events[executionID]; exists {
-		result := make([]TraceEvent, len(events))
-		copy(result, events)
-		return result
+		return events
 	}
 	return []TraceEvent{}
 }

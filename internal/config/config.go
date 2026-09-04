@@ -200,9 +200,6 @@ func (c *Config) applyEnv() {
 	} else if v := strings.TrimSpace(os.Getenv("MCP_ALLOWED_ROOTS")); v != "" {
 		c.AllowedRoots = parseRoots(v)
 	}
-	if v := strings.TrimSpace(os.Getenv("TIBRAIN_DATA_DIR")); v != "" {
-		c.DataDir = v
-	}
 	if c.Auth.BearerTokenEnv == "" {
 		c.Auth.BearerTokenEnv = "TIBRAIN_MCP_BEARER_TOKEN"
 	}
