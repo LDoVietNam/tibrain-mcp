@@ -1,28 +1,9 @@
-# TiBrain Configuration
-# API keys should be provided via environment variables:
-# - MCP_HUB_API_KEY: MCP Hub API key
-# - MCPPROXY_API_KEY: MCP Proxy API key
-# - TIBRAIN_SECRET_KEY: Fallback encryption key
-#
-# For Termux Android, set TIBRAIN_BASE_DIR to the Termux home directory.
-
-tibrain:
+server:
+  host: "127.0.0.1"
   port: 3005
-  data_dir: "Z:\\03_DATA\\tibrain-database"
-
-cli_registry: "true"
-
-handoff_tracking: "true"
-
-skill_sync: "false"
-
-index_knowledge: "false"
+  public_base_url: "https://mcp.trepremium.online"
 
 mcp:
-  public_name: "tibrain"
-  public_mode: "sse"
-  expose_upstream_tools: true
-  compatibility: true
   streamable_http_path: "/mcp"
   legacy_sse_path: "/mcp/sse"
   legacy_message_path: "/mcp/message"
@@ -30,42 +11,13 @@ mcp:
   max_concurrent_calls_per_session: 4
   max_request_bytes: 1048576
   max_output_bytes: 4194304
-  # Upstream MCP servers registered as sub-MCP of TiBrain.
-  # Each entry is a stdio or http MCP server.
-  servers:
-    - name: "prompt-server-go"
-      transport: "stdio"
-      command: "go"
-      args: ["run", "main.go"]
-      env:
-        CUSTOM_PROMPTS_DIR: "./prompts"
-      enabled: false
-    - name: "android-agent"
-      transport: "stdio"
-      command: "python"
-      args: ["-m", "mcp_android"]
-      env:
-        ANDROID_UIAUTOMATOR2_PATH: "/data/data/com.android.uiautomator"
-      enabled: true
-    - name: "smartest-tv"
-      transport: "stdio"
-      command: "go"
-      args: ["run", "main.go"]
-      env:
-        TV_DEVICE_PLATFORM: "android"
-      enabled: false
-
-server:
-  host: "0.0.0.0"            # bind all interfaces for Termux Android
-  port: 3005
-  public_base_url: "http://localhost:3005"
 
 auth:
   mode: "bearer"
   bearer_token_env: "TIBRAIN_MCP_BEARER_TOKEN"
   allowed_origins:
-    - "http://localhost:3005"
-    - "http://127.0.0.1:*"
+    - "https://chatgpt.com"
+    - "https://chat.openai.com"
   rate_limit_per_minute: 60
 
 permissions:
@@ -73,7 +25,9 @@ permissions:
   trusted_full:
     enabled: false
     admin_identities: []
-    filesystem_roots: []
+    filesystem_roots:
+      - "Z:/02_CORE/_cli/.config"
+      - "Z:/01_PROJECTS/apps/extension"
 
 audit:
   enabled: true
@@ -81,5 +35,12 @@ audit:
   redact_secrets: true
 
 allowed_roots:
-  - "$HOME/.config/tibrain"
-  - "$PWD"
+  - "Z:/02_CORE/_cli/.config"
+  - "Z:/01_PROJECTS/apps/extension"
+
+rag:
+  query_cache_ttl: "5m"
+  query_cache_burst: 64
+  sources:
+    - path: "Z:/01_PROJECTS/apps/products/ti-agent/docs"
+      description: "Tai lieu TiAgent (PC Assistant / Android Bridge)"

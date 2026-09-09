@@ -97,6 +97,14 @@ type AuditConfig struct {
 	RedactSecrets bool   `yaml:"redact_secrets"`
 }
 
+// RAGSourceConfig khai báo 1 nguồn tài liệu .md cần index vào TiBrain.
+// Path có thể là thư mục (walk đệ quy) hoặc file .md đơn.
+type RAGSourceConfig struct {
+	Path        string `yaml:"path"`
+	Category    string `yaml:"category,omitempty"`
+	Description string `yaml:"description,omitempty"`
+}
+
 // RAGConfig controls RAG retrieval and query caching.
 type RAGConfig struct {
 	// QueryCacheTTL is how long a cached RAG query result stays fresh
@@ -105,6 +113,9 @@ type RAGConfig struct {
 	// QueryCacheBurst controls how many concurrent cache misses
 	// are allowed before single-flight dedup. Default 64.
 	QueryCacheBurst int `yaml:"query_cache_burst"`
+	// Sources là danh sách thư mục/file .md chuẩn RAG được index
+	// khi TiBrain khởi động (theo docs/RAG_STANDARD.md).
+	Sources []RAGSourceConfig `yaml:"sources,omitempty"`
 }
 
 // Config is the root typed configuration.
@@ -149,8 +160,10 @@ func Default() *Config {
 		},
 		Permissions: PermissionsConfig{ActiveProfile: ProfileOperator},
 		RAG: RAGConfig{
-			QueryCacheTTL:      5 * time.Minute,
-			QueryCacheBurst:    64,
+			QueryCacheTTL:   5 * time.Minute,
+			QueryCacheBurst: 64,
+			// Sources mặc định rỗng: chỉ index khi operator khai báo
+			// trong config.yaml — tránh quét nhầm thư mục.
 		},
 		Audit:       AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
 		// Legacy TiBrain defaults
@@ -160,6 +173,24 @@ func Default() *Config {
 		IndexKnowledge: "",
 		DataDir:        "",
 	}
+}
+
+// RAGIndexSources trả về danh sách source đã lọc (bỏ entry path rỗng)
+// để feed trực tiếp vào knowledge.KnowledgeIndexOptions.
+func (c *Config) RAGIndexSources() []RAGSourceConfig {
+	if c == nil || len(c.RAG.Sources) == 0 {
+		return nil
+	}
+	out := make([]RAGSourceConfig, 0, len(c.RAG.Sources))
+	for _, s := range c.RAG.Sources {
+		if s.Path != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // Load reads configuration from the given YAML file (if present) then applies

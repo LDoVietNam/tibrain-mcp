@@ -502,9 +502,9 @@ func TestKnowledgeStore_Query(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name:    "empty store returns empty",
-			docs:    nil,
-			query:   "anything",
+			name:      "empty store returns empty",
+			docs:      nil,
+			query:     "anything",
 			wantCount: 0,
 		},
 		{
@@ -636,100 +636,9 @@ func TestContains(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// KnowledgeIndexer
+// KnowledgeIndexer — behavior tests đầy đủ nằm ở indexer_test.go
+// (SQLite in-memory + file .md chuẩn RAG). Ở đây chỉ giữ test cấu trúc.
 // ---------------------------------------------------------------------------
-
-func TestKnowledgeIndexer_Index(t *testing.T) {
-	type tc struct {
-		name        string
-		opts        KnowledgeIndexOptions
-		wantIndexed int
-		wantSkipped int
-		wantErrors  []string
-		wantSources int
-	}
-	tests := []tc{
-		{
-			name: "empty sources",
-			opts: KnowledgeIndexOptions{
-				Sources: nil,
-			},
-			wantIndexed: 0,
-			wantSkipped: 0,
-			wantErrors:  []string{},
-			wantSources: 0,
-		},
-		{
-			name: "single source",
-			opts: KnowledgeIndexOptions{
-				Sources: []KnowledgeIndexSource{
-					{Path: "/docs", Category: "docs", Description: "test"},
-				},
-			},
-			wantIndexed: 0,
-			wantSkipped: 0,
-			wantErrors:  []string{},
-			wantSources: 1,
-		},
-		{
-			name: "multiple sources",
-			opts: KnowledgeIndexOptions{
-				Sources: []KnowledgeIndexSource{
-					{Path: "/docs", Category: "docs"},
-					{Path: "/notes", Category: "notes"},
-					{Path: "/kb", Category: "kb"},
-				},
-			},
-			wantIndexed: 0,
-			wantSkipped: 0,
-			wantErrors:  []string{},
-			wantSources: 3,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// KnowledgeIndexer requires a non-nil *db.Hub; the Index method
-			// is a stub that does not access the hub, so we pass nil.
-			ki := NewKnowledgeIndexer(nil)
-			result, err := ki.Index(tt.opts)
-			if err != nil {
-				t.Fatalf("Index returned error: %v", err)
-			}
-			if result == nil {
-				t.Fatal("Index returned nil result")
-			}
-			if result.Indexed != tt.wantIndexed {
-				t.Errorf("Indexed = %d, want %d", result.Indexed, tt.wantIndexed)
-			}
-			if result.Skipped != tt.wantSkipped {
-				t.Errorf("Skipped = %d, want %d", result.Skipped, tt.wantSkipped)
-			}
-			if len(result.Errors) != len(tt.wantErrors) {
-				t.Errorf("Errors count = %d, want %d", len(result.Errors), len(tt.wantErrors))
-			}
-			if result.Sources != tt.wantSources {
-				t.Errorf("Sources = %d, want %d", result.Sources, tt.wantSources)
-			}
-		})
-	}
-}
-
-func TestKnowledgeIndexer_Index_EmptyOptions(t *testing.T) {
-	t.Parallel()
-
-	ki := NewKnowledgeIndexer(nil)
-	result, err := ki.Index(KnowledgeIndexOptions{})
-	if err != nil {
-		t.Fatalf("Index failed: %v", err)
-	}
-	if result.Indexed != 0 {
-		t.Errorf("expected 0 indexed, got %d", result.Indexed)
-	}
-	if result.Sources != 0 {
-		t.Errorf("expected 0 sources, got %d", result.Sources)
-	}
-}
 
 func TestNewKnowledgeIndexer(t *testing.T) {
 	t.Parallel()
@@ -740,29 +649,35 @@ func TestNewKnowledgeIndexer(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// categoryFromPath (internal helper)
-// ---------------------------------------------------------------------------
-
-func TestCategoryFromPath(t *testing.T) {
+func TestKnowledgeIndexer_Index_EmptySources(t *testing.T) {
 	t.Parallel()
 
-	// The current implementation is a stub returning "general".
-	tests := []struct {
-		path string
-		want string
-	}{
-		{"/docs", "general"},
-		{"/notes", "general"},
-		{"anything", "general"},
+	db := newTestDB(t)
+	ki := NewKnowledgeIndexer(fakeHubWrapper{db})
+	result, err := ki.Index(KnowledgeIndexOptions{})
+	if err != nil {
+		t.Fatalf("Index failed: %v", err)
 	}
+	if result.Indexed != 0 {
+		t.Errorf("expected 0 indexed, got %d", result.Indexed)
+	}
+	if result.Sources != 0 {
+		t.Errorf("expected 0 sources, got %d", result.Sources)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors, got %v", result.Errors)
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			got := categoryFromPath(tt.path)
-			if got != tt.want {
-				t.Errorf("categoryFromPath(%q) = %q, want %q", tt.path, got, tt.want)
-			}
-		})
+// ---------------------------------------------------------------------------
+// categoryFromPath — giờ suy ra category thật từ path (không còn stub "general")
+// Full test table nằm ở indexer_test.go TestCategoryFromPath.
+// ---------------------------------------------------------------------------
+
+func TestCategoryFromPath_DefaultGuides(t *testing.T) {
+	t.Parallel()
+
+	if got := categoryFromPath("random-name.md"); got != "guides" {
+		t.Errorf("categoryFromPath(random) = %q, want guides", got)
 	}
 }
