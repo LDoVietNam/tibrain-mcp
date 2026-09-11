@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -32,6 +33,7 @@ type Report struct {
 
 type QualityGate interface {
 	Run(ctx context.Context, repoPath string) (*Report, error)
+	RunParallel(ctx context.Context, repoPath string) (*Report, error)
 }
 
 type qualityGate struct{}
@@ -93,6 +95,69 @@ func (q *qualityGate) Run(ctx context.Context, repoPath string) (*Report, error)
 	summary := "all checks passed"
 	if !passed {
 		summary = "some checks failed"
+	}
+
+	return &Report{Passed: passed, Steps: results, Summary: summary}, nil
+}
+
+// RunParallel executes all quality gate steps concurrently. This implements
+// the Parallel Quality Gates optimization (P0) - reducing total latency by
+// running independent checks (gofmt, vet, build, test) in parallel instead of
+// sequentially.
+func (q *qualityGate) RunParallel(ctx context.Context, repoPath string) (*Report, error) {
+	steps := []struct {
+		step       Step
+		name       string
+		args       []string
+		stopOnFail bool
+	}{
+		{StepLint, "gofmt", []string{"-l", "."}, true},
+		{StepVet, "go", []string{"vet", "./..."}, true},
+		{StepBuild, "go", []string{"build", "./..."}, true},
+		{StepTest, "go", []string{"test", "-count=1", "./..."}, false},
+	}
+
+	n := len(steps)
+	results := make([]StepResult, n)
+	var wg sync.WaitGroup
+
+	for i, s := range steps {
+		wg.Add(1)
+		go func(idx int, s struct {
+			step       Step
+			name       string
+			args       []string
+			stopOnFail bool
+		}) {
+			defer wg.Done()
+			start := time.Now()
+			passed, output := runCmd(ctx, repoPath, s.name, s.args...)
+			elapsed := time.Since(start).Round(time.Millisecond).String()
+
+			r := StepResult{
+				Step: s.step, Passed: passed,
+				Output: truncate(output, 2000), Elapsed: elapsed,
+			}
+			if !passed {
+				r.Error = output
+			}
+			results[idx] = r
+		}(i, s)
+	}
+
+	wg.Wait()
+
+	passed := true
+	for _, r := range results {
+		if !r.Passed {
+			passed = false
+			break
+		}
+	}
+
+	summary := "all checks passed (parallel)"
+	if !passed {
+		summary = "some checks failed (parallel)"
 	}
 
 	return &Report{Passed: passed, Steps: results, Summary: summary}, nil

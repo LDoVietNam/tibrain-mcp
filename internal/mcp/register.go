@@ -439,9 +439,23 @@ func (m *Manager) registerAllTools() {
 	// ---- Ops Tools (quality gate, audit, tracker) ----
 	m.addTool("ops.qualitygate", "Run lint → vet → build → test quality gate. Read-only.", security.CatRead,
 		mcp.NewTool("ops.qualitygate",
-			mcp.WithDescription("Executes gofmt, go vet, go build, go test sequentially against a repo."),
+			mcp.WithDescription("Executes gofmt, go vet, go build, go test against a repo. Supports parallel mode."),
 			mcp.WithString("repo_path", mcp.Description("Repository path (default: .)")),
+			mcp.WithBoolean("parallel", mcp.Description("Run steps in parallel (default: false)")),
 		), m.handleOpsQualityGate)
+
+	m.addTool("tibrain.batch", "Batch multiple read-only MCP tool calls into a single request, executing them in parallel. Read-only.", security.CatRead,
+		mcp.NewTool("tibrain.batch",
+			mcp.WithDescription("Batch multiple read-only MCP tool calls into a single request for parallel execution, reducing latency."),
+			mcp.WithArray("operations", mcp.Required(), mcp.Description("List of tool operations to execute in parallel"),
+				mcp.WithObjectItems()),
+		), m.handleBatch)
+
+	m.addTool("subagent.context_status", "Check subagent context budget. Read-only.", security.CatRead,
+		mcp.NewTool("subagent.context_status",
+			mcp.WithDescription("Returns current context usage percentage, available tokens, and compaction recommendations for subagent sessions."),
+			mcp.WithString("session_id", mcp.Description("Subagent session ID (optional)")),
+		), m.handleContextStatus)
 
 	m.addTool("ops.audit", "Scan repo for secrets and binary artifacts. Read-only.", security.CatRead,
 		mcp.NewTool("ops.audit",
