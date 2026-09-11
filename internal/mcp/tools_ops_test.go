@@ -37,7 +37,7 @@ func newOpsTestManager(t *testing.T) *Manager {
 	errorLedgerPath := filepath.Join(dir, "errors.ndjson")
 
 	m := &Manager{
-		opsQG: qualitygate.New(),
+		opsQG:    qualitygate.New(),
 		opsAudit: audit.New(),
 		opsTracker: tracker.New(tracker.Config{
 			HandoffPath:     handoffPath,

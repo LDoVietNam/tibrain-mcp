@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ti/router/tibrain/internal/db"
 	"github.com/ti/router/tibrain/internal/rag"
@@ -42,10 +43,42 @@ func NewTiAgentOrchestrator(hub *db.Hub, router *rag.RetrievalRouter) *TiAgentOr
 
 // ProcessAgentRequest processes an agent request
 func (a *TiAgentOrchestrator) ProcessAgentRequest(ctx context.Context, req AgentRequest) (*AgentResponse, error) {
+	var responseText string
+	confidence := 0.5
+
+	if a.retrievalRouter != nil && req.Query != "" {
+		decision := a.retrievalRouter.RouteQuery(ctx, req.Query)
+		ragResp, err := a.retrievalRouter.ExecuteRoute(ctx, req.Query, decision, nil, nil)
+		if err == nil && ragResp != nil {
+			if len(ragResp.Results) > 0 {
+				parts := make([]string, 0, len(ragResp.Results))
+				for _, r := range ragResp.Results {
+					if r.Content != "" {
+						parts = append(parts, r.Content)
+					}
+				}
+				if len(parts) > 0 {
+					responseText = fmt.Sprintf("Retrieved %d result(s) for %q: %s", len(parts), req.Query, parts[0])
+				} else {
+					responseText = fmt.Sprintf("No content found for %q", req.Query)
+				}
+			} else {
+				responseText = fmt.Sprintf("No results found for %q", req.Query)
+			}
+			if ragResp.Confidence > 0 {
+				confidence = ragResp.Confidence
+			}
+		}
+	}
+
+	if responseText == "" {
+		responseText = fmt.Sprintf("Processed %q with router=%s", req.Query, req.RequestType)
+	}
+
 	return &AgentResponse{
 		Success:    true,
-		Response:   "TiBrain agent placeholder response: " + req.Query,
-		Confidence: 0.5,
+		Response:   responseText,
+		Confidence: confidence,
 	}, nil
 }
 

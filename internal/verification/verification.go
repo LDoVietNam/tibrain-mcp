@@ -93,19 +93,25 @@ func (v *SchemaValidator) Verify(ctx context.Context, exec interface{}) (*Verifi
 	}, nil
 }
 
-// BasicVerifier implements a simple verifier that always passes
-type BasicVerifier struct{}
+// BasicVerifier implements a simple verifier that reuses the rule-based SchemaValidator.
+type BasicVerifier struct {
+	SchemaValidator *SchemaValidator
+}
 
-// NewBasicVerifier creates a new basic verifier
+// NewBasicVerifier creates a new basic verifier.
 func NewBasicVerifier() *BasicVerifier {
 	return &BasicVerifier{}
 }
 
-// Verify always returns a passed result (stub implementation)
+// Verify runs the underlying SchemaValidator against the execution result and returns the aggregated result.
 func (v *BasicVerifier) Verify(ctx context.Context, exec interface{}) (*VerificationResult, error) {
-	return &VerificationResult{
-		Passed:   true,
-		Feedback: "Verification passed (stub implementation)",
-		Errors:   []error{},
-	}, nil
+	if v == nil || v.SchemaValidator == nil {
+		return &VerificationResult{
+			Passed:   false,
+			Feedback: "verifier not configured",
+			Errors:   []error{fmt.Errorf("schema validator is nil")},
+		}, nil
+	}
+
+	return v.SchemaValidator.Verify(ctx, exec)
 }

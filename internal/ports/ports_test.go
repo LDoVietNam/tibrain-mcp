@@ -52,11 +52,13 @@ func TestInterfaceSatisfaction(t *testing.T) {
 }
 
 type mockToolPort struct{}
+
 func (m *mockToolPort) Execute(ctx context.Context, req ToolRequest) (ToolResult, error) {
 	return ToolResult{Success: true}, nil
 }
 
 type mockPromptPort struct{}
+
 func (m *mockPromptPort) Preflight(ctx context.Context, intent, domain string) (*PromptEnvelope, error) {
 	return &PromptEnvelope{}, nil
 }
@@ -65,8 +67,10 @@ func (m *mockPromptPort) RecordFeedback(ctx context.Context, promptID string, ra
 }
 
 type mockMemoryPort struct{}
-func (m *mockMemoryPort) Store(ctx context.Context, key, value string) error { return nil }
+
+func (m *mockMemoryPort) Store(ctx context.Context, key, value string) error        { return nil }
 func (m *mockMemoryPort) Query(ctx context.Context, query string) ([]string, error) { return nil, nil }
 
 type mockAgentPort struct{}
+
 func (m *mockAgentPort) Run(ctx context.Context, task string) (interface{}, error) { return nil, nil }

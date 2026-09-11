@@ -263,9 +263,9 @@ func TestPredictionEngine_Predict_WithPopulatedRegistry(t *testing.T) {
 
 func TestPredictionEngine_extractIntent(t *testing.T) {
 	tests := []struct {
-		name  string
-		task  string
-		want  string
+		name string
+		task string
+		want string
 	}{
 		{name: "list keyword", task: "list all items", want: "list"},
 		{name: "search keyword", task: "search for records", want: "list"},

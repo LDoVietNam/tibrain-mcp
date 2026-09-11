@@ -23,9 +23,9 @@ func TestVerificationResult_New(t *testing.T) {
 }
 
 func TestBasicVerifier_Verify(t *testing.T) {
-	verifier := NewBasicVerifier()
+	verifier := &BasicVerifier{SchemaValidator: NewSchemaValidator()}
 
-	result, err := verifier.Verify(nil, nil)
+	result, err := verifier.Verify(nil, "valid input")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

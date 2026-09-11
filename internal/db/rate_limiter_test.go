@@ -13,12 +13,12 @@ import (
 
 func TestNewRateLimiter(t *testing.T) {
 	tests := []struct {
-		name            string
-		requestsPerSec  float64
-		burst           int
-		wantTokens      float64
-		wantMaxTokens   float64
-		wantRefillRate  float64
+		name           string
+		requestsPerSec float64
+		burst          int
+		wantTokens     float64
+		wantMaxTokens  float64
+		wantRefillRate float64
 	}{
 		{
 			name:           "standard config",
@@ -70,32 +70,32 @@ func TestNewRateLimiter(t *testing.T) {
 
 func TestRateLimiter_Allow_BurstBehavior(t *testing.T) {
 	tests := []struct {
-		name          string
+		name           string
 		requestsPerSec float64
-		burst         int
-		callCount     int
-		wantAllowed   int
+		burst          int
+		callCount      int
+		wantAllowed    int
 	}{
 		{
-			name:          "allow up to burst then deny",
+			name:           "allow up to burst then deny",
 			requestsPerSec: 1,
-			burst:         3,
-			callCount:     5,
-			wantAllowed:   3,
+			burst:          3,
+			callCount:      5,
+			wantAllowed:    3,
 		},
 		{
-			name:          "single burst allows exactly one",
+			name:           "single burst allows exactly one",
 			requestsPerSec: 0,
-			burst:         1,
-			callCount:     3,
-			wantAllowed:   1,
+			burst:          1,
+			callCount:      3,
+			wantAllowed:    1,
 		},
 		{
-			name:          "no burst denies all",
+			name:           "no burst denies all",
 			requestsPerSec: 0,
-			burst:         0,
-			callCount:     5,
-			wantAllowed:   0,
+			burst:          0,
+			callCount:      5,
+			wantAllowed:    0,
 		},
 	}
 
@@ -217,14 +217,14 @@ func TestRateLimiter_ConcurrentAllow(t *testing.T) {
 		{
 			name:           "concurrent calls with sufficient burst",
 			requestsPerSec: 0,
-			burst:         100,
-			goroutines:    100,
+			burst:          100,
+			goroutines:     100,
 		},
 		{
 			name:           "concurrent calls with limited burst",
 			requestsPerSec: 0,
-			burst:         5,
-			goroutines:    50,
+			burst:          5,
+			goroutines:     50,
 		},
 	}
 

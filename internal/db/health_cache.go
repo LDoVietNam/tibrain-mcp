@@ -17,10 +17,10 @@ var (
 // This avoids re-running migrations on every health check call while still
 // allowing the system to recover if the database was initially unreachable.
 type healthCache struct {
-	mu        sync.RWMutex
-	healthy   bool
-	err       error
-	cachedAt  time.Time
+	mu       sync.RWMutex
+	healthy  bool
+	err      error
+	cachedAt time.Time
 }
 
 var globalHealth = &healthCache{}

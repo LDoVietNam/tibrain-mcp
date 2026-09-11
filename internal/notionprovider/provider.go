@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/ti/router/tibrain/internal/knowledge"
 )
 
 // NotionClient implements Notion API client
@@ -134,19 +136,42 @@ func (c *NotionClient) GetDatabase(ctx context.Context, databaseID string) (*Dat
 	return &db, nil
 }
 
-// SyncToKnowledge syncs Notion data to TiBrain knowledge store
-func (c *NotionClient) SyncToKnowledge(ctx context.Context, databaseID string) error {
+// SyncToKnowledge syncs Notion database pages into the provided knowledge store.
+func (c *NotionClient) SyncToKnowledge(ctx context.Context, databaseID string, store interface {
+	Store(context.Context, knowledge.Document) error
+}) error {
 	pages, err := c.QueryDatabase(ctx, databaseID)
 	if err != nil {
 		return fmt.Errorf("failed to query database: %w", err)
 	}
 
-	// TODO: Sync pages to knowledge store
-	for _, page := range pages {
-		fmt.Printf("Syncing page: %s\n", page.Title)
+	return SyncPagesToKnowledge(ctx, store, pages)
+}
+
+// SyncPagesToKnowledge stores Notion pages into a knowledge store.
+func SyncPagesToKnowledge(ctx context.Context, store interface {
+	Store(context.Context, knowledge.Document) error
+}, pages []Page) error {
+	if store == nil {
+		return fmt.Errorf("knowledge store is nil")
 	}
 
-	return nil
+	var lastErr error
+	for _, page := range pages {
+		content, _ := json.Marshal(page.Content)
+		doc := knowledge.Document{
+			ID:        page.ID,
+			Title:     page.Title,
+			Content:   string(content),
+			Metadata:  map[string]interface{}{"source": "notion"},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := store.Store(ctx, doc); err != nil {
+			lastErr = fmt.Errorf("store page %s: %w", page.ID, err)
+		}
+	}
+	return lastErr
 }
 
 // GetEnvToken retrieves Notion token from environment

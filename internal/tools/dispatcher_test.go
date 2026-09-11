@@ -20,12 +20,12 @@ func testCtx() context.Context { return context.Background() }
 func newDispatcherWithMemory(t *testing.T, roots []string) *Dispatcher {
 	t.Helper()
 	mem := memory.NewCognitiveMemoryManager(nil, nil)
-	return NewDispatcher(mem, roots)
+	return NewDispatcher(mem, nil, roots)
 }
 
 func newDispatcherNoMem(t *testing.T, roots []string) *Dispatcher {
 	t.Helper()
-	return NewDispatcher(nil, roots)
+	return NewDispatcher(nil, nil, roots)
 }
 
 // ---------------------------------------------------------------------------
@@ -38,8 +38,8 @@ func TestDispatcher_Execute_Health(t *testing.T) {
 	d := newDispatcherNoMem(t, nil)
 
 	tests := []struct {
-		name    string
-		tool    string
+		name string
+		tool string
 	}{
 		{"tibrain.health", "tibrain.health"},
 		{"tibrain.readiness", "tibrain.readiness"},

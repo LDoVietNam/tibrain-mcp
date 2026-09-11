@@ -101,7 +101,7 @@ func (a *Authenticator) Wrap(next http.HandlerFunc) http.HandlerFunc {
 			ae := err.(*AuthError)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(ae.Status)
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":` + quote(ae.Msg) + `},"id":null}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":` + Quote(ae.Msg) + `},"id":null}`))
 			return
 		}
 		ctx := withIdentity(r.Context(), identity)
@@ -125,7 +125,8 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-func quote(s string) string {
+// Quote wraps a string in JSON string format (public version of internal quote)
+func Quote(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 

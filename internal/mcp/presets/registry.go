@@ -50,9 +50,9 @@ func (r *Registry) registerDefaults() {
 	})
 	r.Register(&Preset{
 		Name:        PresetStandard,
-		Description: "Standard preset: read + write tools (fs, shell, process, git)",
+		Description: "Standard preset: read + write tools (fs, shell, process, git, android, pocketmcp)",
 		Categories:  []string{"read", "write"},
-		Patterns:    []string{"fs.*", "shell.*", "process.*", "git.*", "brain.*"},
+		Patterns:    []string{"fs.*", "shell.*", "process.*", "git.*", "brain.*", "android.*", "pocketmcp.*"},
 		Enabled:     true,
 	})
 	r.Register(&Preset{

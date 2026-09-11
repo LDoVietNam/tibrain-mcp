@@ -2,6 +2,7 @@ package async
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -32,14 +33,22 @@ type AsyncWriter struct {
 
 // NewAsyncWriter initializes the asynchronous writer queue and starts the background worker.
 // bufferSize determines how many queries can be pending before Enqueue blocks.
-func NewAsyncWriter(db *sql.DB, bufferSize int) *AsyncWriter {
+func NewAsyncWriter(db *sql.DB, bufferSize int) (*AsyncWriter, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db cannot be nil")
+	}
+
+	if bufferSize <= 0 {
+		bufferSize = 100
+	}
+
 	aw := &AsyncWriter{
 		db:       db,
 		jobQueue: make(chan AsyncWriteJob, bufferSize),
 		quit:     make(chan struct{}),
 	}
 	aw.startWorker()
-	return aw
+	return aw, nil
 }
 
 // startWorker launches the background goroutine to process the write queue.

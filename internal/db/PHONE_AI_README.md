@@ -76,7 +76,7 @@ ollama serve &
 
 ```bash
 # Khởi động TiBrain
-cd Z:\01_PROJECTS\apps\tibrain
+cd Z:\01_PROJECTS\apps\products\tibrain
 .\tibrain.exe --port 1810
 
 # Kết nối đến phone AI

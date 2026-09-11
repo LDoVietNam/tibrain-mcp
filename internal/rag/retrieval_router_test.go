@@ -74,8 +74,8 @@ func TestRouteQuery_RouteTypeValue(t *testing.T) {
 
 func TestExecuteRoute_EmptyResults(t *testing.T) {
 	tests := []struct {
-		name     string
-		query    string
+		name  string
+		query string
 	}{
 		{"normal query", "test query"},
 		{"empty query", ""},

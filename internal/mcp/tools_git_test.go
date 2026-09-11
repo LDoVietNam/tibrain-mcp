@@ -58,6 +58,21 @@ func newGitRepo(t *testing.T) string {
 	return repo
 }
 
+// newNonGitDir returns a temp dir that is guaranteed to NOT be inside a git
+// repository from git's point of view. It plants an invalid .git file so git
+// fails fast instead of walking up to an ancestor repository (some CI/machine
+// temp dirs live inside one, e.g. %TEMP% on the dev box).
+func newNonGitDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	// An invalid .git file (not a directory, not a valid gitdir pointer)
+	// makes git error immediately instead of discovering an ancestor repo.
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("not a gitfile\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // mustRun executes a git subcommand (with optional extra args) in dir and
 // fails the test if it errors. Returns combined output.
 func mustRun(t *testing.T, name, dir string, args ...string) string {
@@ -142,7 +157,7 @@ func TestHandleGitStatus(t *testing.T) {
 
 	t.Run("missing repo errors", func(t *testing.T) {
 		// Point at a non-repo path; git status should fail and produce an error result.
-		bad := t.TempDir()
+		bad := newNonGitDir(t)
 		req := gitReq(t, "git.status", map[string]any{"repo": bad})
 		res, err := m.handleGitStatus(ctx, req)
 		if err != nil {
@@ -259,7 +274,7 @@ func TestHandleGitLog(t *testing.T) {
 	})
 
 	t.Run("missing repo errors on non-git", func(t *testing.T) {
-		bad := t.TempDir()
+		bad := newNonGitDir(t)
 		req := gitReq(t, "git.log", map[string]any{"repo": bad})
 		res, err := m.handleGitLog(ctx, req)
 		if err != nil {
@@ -307,7 +322,7 @@ func TestHandleGitBranch(t *testing.T) {
 	})
 
 	t.Run("missing repo errors", func(t *testing.T) {
-		bad := t.TempDir()
+		bad := newNonGitDir(t)
 		req := gitReq(t, "git.branch", map[string]any{"repo": bad})
 		res, err := m.handleGitBranch(ctx, req)
 		if err != nil {
@@ -447,7 +462,7 @@ func TestHandleGitCommit(t *testing.T) {
 	})
 
 	t.Run("missing repo errors", func(t *testing.T) {
-		bad := t.TempDir()
+		bad := newNonGitDir(t)
 		req := gitReq(t, "git.commit", map[string]any{
 			"repo":    bad,
 			"message": "try",
@@ -601,7 +616,7 @@ func TestGitCmd_FailingGitCommand(t *testing.T) {
 	ctx := context.Background()
 	m := gitManager()
 	// A repo path that is not a git repository -> gitCommand fails.
-	bad := t.TempDir()
+	bad := newNonGitDir(t)
 	req := gitReq(t, "git.status", map[string]any{"repo": bad})
 	res, err := m.handleGitStatus(ctx, req)
 	if err != nil {

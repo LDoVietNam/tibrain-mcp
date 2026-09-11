@@ -66,6 +66,13 @@ func main() {
 	guard := security.NewGuard(cfg)
 	auditor := security.NewAuditor("", false, true)
 
+	// Initialize authenticator for MCP gateway
+	authenticator := security.NewAuthenticator(
+		cfg.BearerToken(),
+		cfg.Auth.AllowedOrigins,
+		cfg.Auth.RateLimitPerMinute,
+	)
+
 	// Initialize metrics collector
 	memory.InitGlobalMetrics("tibrain", "memory")
 
@@ -117,7 +124,7 @@ func main() {
 		allowedRoots = append(allowedRoots, ".")
 	}
 
-	manager := mcp.NewManager(cfg, guard, auditor, mem, retrievalRouter, allowedRoots)
+	manager := mcp.NewManager(cfg, guard, auditor, mem, retrievalRouter, allowedRoots, authenticator)
 
 	apiServer := api.NewAPIServer(hub, integrationManager)
 

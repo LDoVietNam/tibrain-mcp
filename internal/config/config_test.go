@@ -111,6 +111,11 @@ func TestDefault_IsDeepCopySafe(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestLoad_FromFile(t *testing.T) {
+	// Unset env overrides để test hermetic — TIBRAIN_HOST/TIBRAIN_PORT từ
+	// môi trường ngoài (settings.json) sẽ override YAML theo design.
+	unsetEnv(t, "TIBRAIN_HOST")
+	unsetEnv(t, "TIBRAIN_PORT")
+	unsetEnv(t, "TIBRAIN_PUBLIC_BASE_URL")
 	yamlContent := `
 server:
   host: "0.0.0.0"
@@ -168,6 +173,8 @@ server:
 }
 
 func TestLoad_MissingFileFallsBackToDefault(t *testing.T) {
+	unsetEnv(t, "TIBRAIN_HOST") // env thật từ shell không được override default trong test hermetic
+	unsetEnv(t, "TIBRAIN_PORT")
 	cfg, err := Load("/nonexistent/path/does/not/exist.yaml")
 	if err != nil {
 		t.Fatalf("Load missing file: %v", err)
@@ -179,6 +186,8 @@ func TestLoad_MissingFileFallsBackToDefault(t *testing.T) {
 }
 
 func TestLoad_EmptyPath(t *testing.T) {
+	unsetEnv(t, "TIBRAIN_HOST") // env thật từ shell không được override default trong test hermetic
+	unsetEnv(t, "TIBRAIN_PORT")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load empty path: %v", err)
@@ -199,6 +208,9 @@ func TestLoad_InvalidYAML(t *testing.T) {
 }
 
 func TestLoad_YAMLPartialMerge(t *testing.T) {
+	// Unset env overrides để test hermetic (xem TestLoad_FromFile).
+	unsetEnv(t, "TIBRAIN_HOST")
+	unsetEnv(t, "TIBRAIN_PORT")
 	yamlContent := `
 server:
   port: 4000
@@ -295,12 +307,12 @@ func TestValidate_KnownProfiles(t *testing.T) {
 
 func TestValidate_TrustedFull_NotArmed(t *testing.T) {
 	cases := []struct {
-		name            string
-		autonomyMode    string // env
-		enabled         bool
-		admins          []string
-		auditEnabled    bool
-		expectArmedErr  bool
+		name           string
+		autonomyMode   string // env
+		enabled        bool
+		admins         []string
+		auditEnabled   bool
+		expectArmedErr bool
 	}{
 		{
 			name:           "no autonomy env",
@@ -379,6 +391,7 @@ func TestValidate_AuditEnabledEmptyPath(t *testing.T) {
 func TestValidate_TrustedFull_NoBearerToken(t *testing.T) {
 	// Armed state (env + config + admin + audit) but no bearer token set
 	setEnv(t, "TIBRAIN_AUTONOMY_MODE", "trusted_full")
+	unsetEnv(t, "TIBRAIN_MCP_BEARER_TOKEN") // env thật từ router.env không được leak vào test hermetic
 	cfg := Default()
 	cfg.Permissions.ActiveProfile = ProfileTrustedFull
 	cfg.Permissions.TrustedFull.Enabled = true
@@ -880,29 +893,23 @@ func TestDetectAndLoad_ReturnsNilWhenNoConfig(t *testing.T) {
 }
 
 func TestDetectAndLoad_FindsTibrainrcInCwd(t *testing.T) {
-	// Note: loadYamlConfig/loadJsonConfig are currently stubs, so finding a
-	// config file results in an "unsupported config format" error. This test
-	// verifies that DetectAndLoad correctly finds the .tibrainrc file path.
 	dir := t.TempDir()
 	yamlContent := "project_name: test-proj\nversion: \"1.0\"\n"
 	writeTempConfig(t, dir, ".tibrainrc", yamlContent)
 	t.Chdir(dir)
 
 	cfg, err := DetectAndLoad()
-	if err == nil {
-		// If parsing is later implemented, verify content
-		if cfg == nil {
-			t.Fatal("expected config, got nil")
-		}
-		if cfg.ProjectName != "test-proj" {
-			t.Errorf("project_name: got %q, want %q", cfg.ProjectName, "test-proj")
-		}
-		if cfg.Version != "1.0" {
-			t.Errorf("version: got %q, want %q", cfg.Version, "1.0")
-		}
-	} else {
-		// Stub behavior: parsing not yet implemented, error expected
-		t.Logf("parsing stub active, got expected error: %v", err)
+	if err != nil {
+		t.Fatalf("DetectAndLoad: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config, got nil")
+	}
+	if cfg.ProjectName != "test-proj" {
+		t.Errorf("project_name: got %q, want %q", cfg.ProjectName, "test-proj")
+	}
+	if cfg.Version != "1.0" {
+		t.Errorf("version: got %q, want %q", cfg.Version, "1.0")
 	}
 }
 
@@ -919,16 +926,14 @@ func TestDetectAndLoad_FindsConfigWalkingUp(t *testing.T) {
 	t.Chdir(child)
 
 	cfg, err := DetectAndLoad()
-	if err == nil {
-		if cfg == nil {
-			t.Fatal("expected config from parent dir, got nil")
-		}
-		if cfg.ProjectName != "parent-proj" {
-			t.Errorf("project_name: got %q, want %q", cfg.ProjectName, "parent-proj")
-		}
-	} else {
-		// Stub behavior: parsing not yet implemented, error expected
-		t.Logf("parsing stub active, got expected error: %v", err)
+	if err != nil {
+		t.Fatalf("DetectAndLoad: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config from parent dir, got nil")
+	}
+	if cfg.ProjectName != "parent-proj" {
+		t.Errorf("project_name: got %q, want %q", cfg.ProjectName, "parent-proj")
 	}
 }
 
@@ -939,16 +944,14 @@ func TestDetectAndLoad_PrefersTibrainrcOver1mcprc(t *testing.T) {
 	t.Chdir(dir)
 
 	cfg, err := DetectAndLoad()
-	if err == nil {
-		if cfg == nil {
-			t.Fatal("expected config, got nil")
-		}
-		if cfg.ProjectName != "tibrain" {
-			t.Errorf("expected .tibrainrc precedence, got %q", cfg.ProjectName)
-		}
-	} else {
-		// Stub behavior: parsing not yet implemented, error expected
-		t.Logf("parsing stub active, got expected error: %v", err)
+	if err != nil {
+		t.Fatalf("DetectAndLoad: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config, got nil")
+	}
+	if cfg.ProjectName != "tibrain" {
+		t.Errorf("expected .tibrainrc precedence, got %q", cfg.ProjectName)
 	}
 }
 
@@ -1071,6 +1074,10 @@ mcp_servers:
 // ------------------------------------------------------------------
 
 func TestLoad_FullYAMLConfig(t *testing.T) {
+	// Unset env overrides để test hermetic (xem TestLoad_FromFile).
+	unsetEnv(t, "TIBRAIN_HOST")
+	unsetEnv(t, "TIBRAIN_PORT")
+	unsetEnv(t, "TIBRAIN_PUBLIC_BASE_URL")
 	yamlContent := `
 server:
   host: "0.0.0.0"
@@ -1170,6 +1177,12 @@ audit:
 	path := writeTempConfig(t, dir, "cfg.yaml", yamlContent)
 	setEnv(t, "TIBRAIN_AUTONOMY_MODE", "trusted_full")
 	setEnv(t, "TIBRAIN_MCP_BEARER_TOKEN", "admin-secret")
+	// Hermetic: the machine may have TIBRAIN_ALLOWED_ROOTS / MCP_ALLOWED_ROOTS
+	// set globally, which would leak extra entries into AllowedRoots and make
+	// the effective-roots count below non-deterministic. Unset both so the
+	// test only sees the filesystem roots declared in the YAML above.
+	unsetEnv(t, "TIBRAIN_ALLOWED_ROOTS")
+	unsetEnv(t, "MCP_ALLOWED_ROOTS")
 
 	cfg, err := Load(path)
 	if err != nil {

@@ -68,6 +68,7 @@ type ClientConfig struct {
 	Args      []string          // Arguments for the command
 	URL       string            // HTTP endpoint for HTTP transport
 	Env       map[string]string // Environment variables to set
+	Headers   map[string]string // HTTP headers for HTTP transport
 	Enabled   bool              // Whether this client should be started
 	AutoStart bool              // Auto-connect on startup
 }

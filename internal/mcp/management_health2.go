@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -66,28 +67,83 @@ func (h *ManagementHandler) handleExecutionLogs(w http.ResponseWriter, r *http.R
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_ = r.URL.Query().Get("tool_name")
-	_ = r.URL.Query().Get("server_name")
-	_ = r.URL.Query().Get("agent_id")
-	_ = r.URL.Query().Get("success")
-	_ = r.URL.Query().Get("limit")
 
-	logs := []map[string]interface{}{}
+	h.mu.RLock()
+	logs := make([]map[string]interface{}, len(h.logs))
+	copy(logs, h.logs)
+	h.mu.RUnlock()
+
+	toolName := r.URL.Query().Get("tool_name")
+	serverName := r.URL.Query().Get("server_name")
+	success := r.URL.Query().Get("success")
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+
+	filtered := logs
+	if toolName != "" {
+		var out []map[string]interface{}
+		for _, l := range filtered {
+			if l["tool_name"] == toolName {
+				out = append(out, l)
+			}
+		}
+		filtered = out
+	}
+	if serverName != "" {
+		var out []map[string]interface{}
+		for _, l := range filtered {
+			if l["server_name"] == serverName {
+				out = append(out, l)
+			}
+		}
+		filtered = out
+	}
+	if success != "" {
+		var out []map[string]interface{}
+		want := success == "true"
+		for _, l := range filtered {
+			if l["success"] == want {
+				out = append(out, l)
+			}
+		}
+		filtered = out
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs":  logs,
-		"count": len(logs),
+		"logs":  filtered,
+		"count": len(filtered),
 	})
 }
 
 func (h *ManagementHandler) handleLogByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Path
-	id := path[len("/api/v1/mcp/logs/"):]
+	id := strings.TrimPrefix(path, "/api/v1/mcp/logs/")
 	if id == "" {
 		http.Error(w, "log ID required", http.StatusBadRequest)
 		return
 	}
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, l := range h.logs {
+		if v, ok := l["id"].(string); ok && v == id {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(l)
+			return
+		}
+	}
+
+	http.Error(w, "log not found", http.StatusNotFound)
 }
 
 func (h *ManagementHandler) handleSyncTools(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +197,7 @@ func (h *ManagementHandler) handleSyncTools(w http.ResponseWriter, r *http.Reque
 func (h *ManagementHandler) logToolExecution(serverName, toolName string, args map[string]interface{}, result *mcp.CallToolResult, success bool, latencyMs int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
 	serverMetrics, ok := h.serverMetrics[serverName]
 	if !ok {
 		serverMetrics = &ServerMetrics{ServerID: serverName}
@@ -171,6 +228,15 @@ func (h *ManagementHandler) logToolExecution(serverName, toolName string, args m
 	for _, tm := range h.toolMetrics {
 		serverMetrics.ToolMetrics = append(serverMetrics.ToolMetrics, *tm)
 	}
+
+	h.logs = append(h.logs, map[string]interface{}{
+		"id":          fmt.Sprintf("%d", time.Now().UnixNano()),
+		"server_name": serverName,
+		"tool_name":   toolName,
+		"success":     success,
+		"latency_ms":  latencyMs,
+		"timestamp":   time.Now().Format(time.RFC3339),
+	})
 }
 
 func fmtError(err error) string {

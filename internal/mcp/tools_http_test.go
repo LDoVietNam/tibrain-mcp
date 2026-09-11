@@ -207,9 +207,9 @@ func TestToolsHTTPRequest(t *testing.T) {
 	t.Run("invalid URL returns invalid params", func(t *testing.T) {
 		ctx := context.Background()
 		req := httpCallTool(t, "http.request", map[string]any{
-			"url":            "://bad-url",
-			"method":         "GET",
-			"allowed_hosts":  []string{"127.0.0.1"},
+			"url":           "://bad-url",
+			"method":        "GET",
+			"allowed_hosts": []string{"127.0.0.1"},
 		})
 		res, err := (&Manager{}).handleHTTPRequest(ctx, req)
 		if err != nil {
@@ -222,7 +222,7 @@ func TestToolsHTTPRequest(t *testing.T) {
 		if !strings.Contains(body, "invalid params") && !strings.Contains(body, "forbidden") {
 			t.Errorf("expected invalid params or forbidden message, got: %s", body)
 		}
-		})
+	})
 
 	t.Run("missing url param", func(t *testing.T) {
 		ctx := context.Background()
@@ -245,7 +245,7 @@ func TestToolsHTTPRequest(t *testing.T) {
 		ctx := context.Background()
 		// No allowed_hosts — loopback IP is blocked by ssrfGuard.
 		req := httpCallTool(t, "http.request", map[string]any{
-			"url":   "http://127.0.0.1:9/test",
+			"url":    "http://127.0.0.1:9/test",
 			"method": "GET",
 		})
 		res, err := (&Manager{}).handleHTTPRequest(ctx, req)

@@ -1,6 +1,6 @@
 # TiBrain API Reference
 
-> **Lưu ý về Prompt Intelligence:** các endpoint `/api/v1/prompt/*` đang là target contract, chưa phải API runtime đã xác minh. Xem [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTELLIGENCE_CONTRACT.md) và `TASKS.md` để theo dõi triển khai. Không tích hợp production vào các endpoint này trước khi contract test chạy xanh.
+> **Lưu ý về Prompt Intelligence:** các endpoint `/api/v1/prompt/*` và `/api/prompts/*` triển khai contract tại [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTELLIGENCE_CONTRACT.md) (đã có unit test + E2E `-tags integration` xanh). Vẫn nên xác minh response thực tế trước khi tích hợp production; một số endpoint management có thể yêu cầu bearer token khi deploy có auth.
 
 TiBrain là một Go service chạy trên **port `3005`**, gom chung một HTTP server duy nhất phục vụ đồng thời:
 
@@ -38,7 +38,8 @@ export TIBRAIN="http://localhost:3005"
 8. [Agents & Orchestration](#8-agents--orchestration)
 9. [RTK (Runtime Toolkit)](#9-rtk-runtime-toolkit)
 10. [Misc (Chat, Model Stats, Docs, Browser Runtime, v1 Open-WebUI)](#10-misc)
-11. [MCP Tools (SSE)](#11-mcp-tools-sse)
+11. [Prompt Intelligence & Ingestion](#11-prompt-intelligence--ingestion)
+12. [MCP Tools (SSE)](#12-mcp-tools-sse)
 
 ---
 
@@ -852,7 +853,219 @@ Response (minh họa):
 
 ---
 
-## 11. MCP Tools (SSE)
+## 11. Prompt Intelligence & Ingestion
+
+Prompt Intelligence là registry capsule/version + retrieval + feedback phục vụ plugin Prompt Orchestrator của TiRouter (contract: [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTELLIGENCE_CONTRACT.md)).
+
+> **Nguyên tắc:** fast path không gọi LLM, trả tối đa **2 capsule**; capsule chỉ được trả về khi trạng thái `active`; feedback không lưu task/response thô; nguồn ngoài phải qua provenance + license review + manual approval trước khi kích hoạt.
+
+### Prompt Intelligence API (v1)
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | `/api/v1/prompt/preflight` | Preflight: capsule nào nên dùng cho intent/domain (`use` / `skip`) |
+| POST | `/api/v1/prompt/feedback` | Ghi feedback rút gọn cho một capsule (dedup theo request/capsule/version) |
+| GET | `/api/v1/prompt/catalog/version` | Version catalog + số capsule active |
+| POST | `/api/v1/prompt/ingest` | Ingest prompt nguồn ngoài (provenance + dedup + license review) |
+| POST | `/api/prompts/{id}/approve` | Manual review: kích hoạt capsule (draft → active) |
+| POST | `/api/prompts/{id}/reject` | Từ chối capsule (draft → archived) |
+
+#### Ví dụ: POST /api/v1/prompt/preflight
+
+```bash
+curl -s -X POST "$TIBRAIN/api/v1/prompt/preflight" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "intent": "code_review",
+    "domain": "dev",
+    "models": ["anthropic/claude-sonnet"],
+    "max_capsules": 2
+  }'
+```
+
+Response:
+
+```json
+{
+  "request_id": "req_1723000000000000000",
+  "decision": "use",
+  "reason": "retrieved 1 capsules for intent=\"code_review\" domain=\"dev\"",
+  "capsules": [
+    {
+      "id": "cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "name": "PR Guidelines",
+      "description": "Check security and style before merging",
+      "domain": "dev",
+      "intent": ["code_review"],
+      "risk": "low",
+      "status": "active"
+    }
+  ]
+}
+```
+
+> `decision` = `use` (có capsule phù hợp) | `skip` (không có) | `fallback` (dự phòng). Khi không có capsule phù hợp, `decision` là `skip` và không kèm `capsules`.
+
+#### Ví dụ: POST /api/v1/prompt/feedback
+
+```bash
+curl -s -X POST "$TIBRAIN/api/v1/prompt/feedback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "req_1723000000000000000",
+    "capsule_id": "cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "capsule_version": "1.0",
+    "outcome": "good",
+    "user_override": false,
+    "added_tokens": 0
+  }'
+```
+
+Response (`201 Created`):
+
+```json
+{ "id": "fb_1723000000000000000", "status": "recorded" }
+```
+
+#### Ví dụ: GET /api/v1/prompt/catalog/version
+
+```bash
+curl -s "$TIBRAIN/api/v1/prompt/catalog/version"
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "updated_at": 1723000000,
+  "capsule_count": 3
+}
+```
+
+#### Ví dụ: POST /api/v1/prompt/ingest
+
+Ingest nhận một mảng `documents`; mỗi document được kiểm tra provenance (URL + source type + license) và dedup theo content hash. Kết quả trả theo từng document (không abort cả batch khi một doc lỗi).
+
+```bash
+curl -s -X POST "$TIBRAIN/api/v1/prompt/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "documents": [
+      {
+        "name": "PR Guidelines",
+        "description": "Quy tắc review PR",
+        "intent": "code_review",
+        "domain": "dev",
+        "content": "Always check for security issues before merging.",
+        "placement": "system",
+        "risk": "low",
+        "source": {
+          "url": "https://github.com/example/guidelines/blob/main/pr.md",
+          "type": "github",
+          "license": "MIT"
+        }
+      }
+    ]
+  }'
+```
+
+Response (`200 OK`):
+
+```json
+{
+  "results": [
+    {
+      "capsule_id": "cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "status": "created"
+    }
+  ]
+}
+```
+
+| `status` | Ý nghĩa |
+|----------|---------|
+| `created` | Capsule tạo ở trạng thái `draft`, license `pending_review`, chờ approve |
+| `duplicate` | Nội dung đã tồn tại (dedup theo content hash); `capsule_id` trỏ capsule gốc |
+| `rejected` | Thiếu provenance / URL không hợp lệ / nguồn ngoài không khai license; `reason` giải thích |
+
+> Trường `source`: `url` (http(s) hoặc path local), `type` (`github`/`web`/`docs`/`manual`...), `license` (bắt buộc với nguồn ngoài; `manual` — first-party — được miễn).
+
+#### Ví dụ: POST /api/prompts/{id}/approve (manual review)
+
+Sau khi review license, gọi approve để kích hoạt capsule:
+
+```bash
+curl -s -X POST "$TIBRAIN/api/prompts/cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8/approve" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Response:
+
+```json
+{ "status": "approved", "id": "cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8" }
+```
+
+> Approve thất bại (400) nếu capsule thiếu provenance hoặc chưa qua review. Tương tự, `POST /api/prompts/{id}/reject` đưa capsule về `archived`.
+
+### Prompt Management (dashboard & canary)
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| GET | `/api/prompts` | Liệt kê capsule (`?status=&intent=&domain=&limit=`) |
+| GET | `/api/prompts/{id}` | Chi tiết một capsule |
+| GET | `/api/prompts/{id}/versions` | Danh sách version của capsule |
+| GET | `/api/prompts/{id}/versions/{version}` | Chi tiết một version |
+| POST | `/api/prompts/observe` | Ghi trace quan sát (observability) |
+| POST | `/api/prompts/{id}/canary` | Deploy canary version |
+| POST | `/api/prompts/{id}/promote` | Promote canary → active |
+| POST | `/api/prompts/{id}/rollback` | Rollback canary → draft |
+| GET | `/api/prompts/metrics` | Metrics tổng hợp (capsules, versions, traces, feedback, evaluations) |
+
+#### Ví dụ: GET /api/prompts
+
+```bash
+curl -s "$TIBRAIN/api/prompts?status=active&limit=10"
+```
+
+Response:
+
+```json
+[
+  {
+    "id": "cap_6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "name": "PR Guidelines",
+    "description": "Quy tắc review PR",
+    "domain": "dev",
+    "intent": ["code_review"],
+    "risk": "low",
+    "status": "active"
+  }
+]
+```
+
+#### Ví dụ: GET /api/prompts/metrics
+
+```bash
+curl -s "$TIBRAIN/api/prompts/metrics"
+```
+
+Response:
+
+```json
+{
+  "total_capsules": 3,
+  "total_versions": 4,
+  "total_traces": 120,
+  "total_feedback": 45,
+  "total_evaluations": 8
+}
+```
+
+---
+
+## 12. MCP Tools (SSE)
 
 TiBrain nhúng một MCP server truy cập qua SSE:
 

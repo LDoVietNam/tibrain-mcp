@@ -16,12 +16,16 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/ti/router/tibrain/internal/android"
 	"github.com/ti/router/tibrain/internal/audit"
 	"github.com/ti/router/tibrain/internal/config"
 	"github.com/ti/router/tibrain/internal/mcp/presets"
 	"github.com/ti/router/tibrain/internal/mcp/templates"
+	"github.com/ti/router/tibrain/internal/memory"
 	"github.com/ti/router/tibrain/internal/qualitygate"
+	"github.com/ti/router/tibrain/internal/rag"
 	"github.com/ti/router/tibrain/internal/security"
+	"github.com/ti/router/tibrain/internal/tools"
 	"github.com/ti/router/tibrain/internal/tracker"
 )
 
@@ -43,6 +47,9 @@ type Manager struct {
 	lazyPool         *LazyPool
 	presets          *presets.Registry
 	templates        *templates.Registry
+	androidManager   *android.AndroidManager
+	dispatcher       *tools.Dispatcher
+	auth             *security.Authenticator
 
 	opsQG      qualitygate.QualityGate
 	opsAudit   audit.Audit
@@ -50,7 +57,7 @@ type Manager struct {
 }
 
 // NewManager builds the MCP gateway. cfg must already be validated (fail-closed).
-func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Auditor) *Manager {
+func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Auditor, mem *memory.CognitiveMemoryManager, retriever *rag.RetrievalRouter, allowedRoots []string, auth *security.Authenticator) *Manager {
 	reg := NewRegistry()
 	m := &Manager{
 		cfg:              cfg,
@@ -65,6 +72,7 @@ func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Aud
 		lazyPool:         NewLazyPool(LazyPoolConfig{IdleTimeout: 5 * time.Minute, MaxConcurrent: 10}),
 		presets:          presets.NewRegistry(),
 		templates:        templates.NewRegistry(),
+		auth:             auth,
 		srv: server.NewMCPServer(
 			"tibrain",
 			"2.3.0",
@@ -73,13 +81,35 @@ func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Aud
 		),
 	}
 	m.stream = server.NewStreamableHTTPServer(m.srv,
-		streamableHTTPOptions(cfg.MCP.StreamableHTTPPath)...,
+		streamableHTTPOptions(cfg.MCP.StreamableHTTPPath, auth)...,
 	)
 	m.sse = server.NewSSEServer(m.srv,
 		sseOptions(cfg.MCP.LegacySSEPath)...,
 	)
+
+	// Initialize Android manager
+	androidCfg := android.AndroidConfig{
+		ADBPath:      "adb",
+		DeviceSerial: "",
+		Timeout:      30 * time.Second,
+	}
+	m.androidManager = android.NewAndroidManager(androidCfg)
+
+	// Initialize dispatcher with memory and retriever
+	m.dispatcher = tools.NewDispatcher(mem, retriever, allowedRoots)
+
 	m.registerAllTools()
 	m.initializeMCPClients(cfg)
+
+	// Register Android MCP tools
+	log.Printf("[DEBUG] Registering Android MCP tools...")
+	androidRegistrar := android.NewAndroidToolRegistrar(m.androidManager)
+	androidRegistrar.RegisterTools(func(name, desc string, cat security.Category, tool mcp.Tool, handler server.ToolHandlerFunc) {
+		log.Printf("[DEBUG] Adding Android tool: %s", name)
+		m.addTool(name, desc, cat, tool, handler)
+	})
+	log.Printf("[DEBUG] Android MCP tools registered successfully")
+	log.Printf("[DEBUG] Total tools in registry: %d", len(m.registry.List()))
 
 	// Sync tools from MCP clients to registry
 	go func() {
@@ -139,6 +169,9 @@ func (m *Manager) initializeMCPClients(cfg *config.Config) {
 			Args:      serverCfg.Args,
 			URL:       serverCfg.URL,
 			Env:       serverCfg.Env,
+			Headers:   serverCfg.Headers,
+			Enabled:   serverCfg.Enabled,
+			AutoStart: serverCfg.AutoStart,
 		}
 
 		// Register with lazy pool — connection deferred until first use
@@ -165,25 +198,25 @@ func (m *Manager) initializeMCPClients(cfg *config.Config) {
 	log.Printf("[MCP] MCP client initialization complete. Total clients: %d", len(m.mcpClientManager.ListClients()))
 }
 
-// syncMCPToolsToRegistry syncs tools from all connected MCP clients to the tool registry.
+// syncMCPToolsToRegistry syncs tools from all connected MCP clients to the tool registry
+// and adds them to the MCP server for client access.
 func (m *Manager) syncMCPToolsToRegistry(ctx context.Context) {
 	log.Printf("[MCP] Starting tool sync from MCP clients")
 
 	clientNames := m.mcpClientManager.ListClients()
 
 	for _, clientName := range clientNames {
-		client, ok := m.mcpClientManager.GetClient(clientName)
-		if !ok {
-			log.Printf("[MCP] Client not found: %s", clientName)
+		// Get the lazy client from the pool (this is the one that's actually connected)
+		lazyClient, ok := m.lazyPool.Get(clientName)
+		if !ok || lazyClient == nil {
+			log.Printf("[MCP] Lazy client not found in pool: %s", clientName)
 			continue
 		}
 
-		if !client.IsConnected() {
-			log.Printf("[MCP] Client not connected, skipping tool sync: %s", clientName)
-			continue
-		}
+		log.Printf("[MCP] Checking lazy client %s: connected=%v", clientName, lazyClient.IsConnected())
 
-		tools, err := client.ListTools(ctx)
+		// Try to list tools - ensureConnected will auto-connect if needed
+		tools, err := lazyClient.ListTools(ctx)
 		if err != nil {
 			log.Printf("[MCP] Failed to list tools from %s: %v", clientName, err)
 			continue
@@ -195,13 +228,38 @@ func (m *Manager) syncMCPToolsToRegistry(ctx context.Context) {
 			// Create tool name with MCP server prefix to avoid conflicts
 			toolName := clientName + "." + tool.Name
 
+			// Create a wrapper handler that proxies to the upstream MCP server
+			wrapperHandler := func(upstreamClient *LazyClient, upstreamToolName string) server.ToolHandlerFunc {
+				return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					// Call the tool on the upstream MCP server
+					args, ok := req.Params.Arguments.(map[string]interface{})
+					if !ok {
+						args = make(map[string]interface{})
+					}
+					return upstreamClient.CallTool(ctx, upstreamToolName, args)
+				}
+			}(lazyClient, tool.Name)
+
+			// Create a new tool with the prefixed name for the MCP server
+			// We need to copy the input schema from the original tool
+			prefixedTool := mcp.NewTool(toolName,
+				mcp.WithDescription(tool.Description),
+			)
+			// Copy input schema properties if available
+			if tool.InputSchema.Type != "" {
+				prefixedTool.InputSchema = tool.InputSchema
+			}
+
 			rec := ToolRecord{
 				Name:        toolName,
 				Description: tool.Description,
 				Category:    security.CatRead,
 				Tool:        tool,
+				Handler:     wrapperHandler,
 			}
 			m.registry.Register(rec)
+			// Add tool with prefixed name to MCP server
+			m.srv.AddTool(prefixedTool, m.wrapGuard(rec, wrapperHandler))
 			log.Printf("[MCP] Registered tool: %s (from %s)", toolName, clientName)
 		}
 	}
@@ -211,16 +269,59 @@ func (m *Manager) syncMCPToolsToRegistry(ctx context.Context) {
 
 // HandleStreamableHTTP serves the canonical /mcp endpoint.
 func (m *Manager) HandleStreamableHTTP(w http.ResponseWriter, r *http.Request) {
+	// Enforce auth tại tầng mount — WithHTTPContextFunc của SDK v0.56.0 chỉ
+	// ghi error vào context bên TRONG ServeHTTP, không thể reject request,
+	// nên check r.Context() ở đây là dead code (context của handler ngoài
+	// không bao giờ chứa "auth_error"). Gọi Authenticate trực tiếp: thiếu
+	// token → 401 fail-closed trước khi request chạm MCP server.
+	if m.auth != nil {
+		if _, err := m.auth.Authenticate(r); err != nil {
+			if ae, ok := err.(*security.AuthError); ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(ae.Status)
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":` + security.Quote(ae.Msg) + `},"id":null}`))
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 	m.stream.ServeHTTP(w, r)
 }
 
 // HandleSSE serves the legacy /mcp/sse endpoint.
 func (m *Manager) HandleSSE(w http.ResponseWriter, r *http.Request) {
+	// Cùng fail-closed auth như /mcp — SSE gateway không được mở hơn.
+	if m.auth != nil {
+		if _, err := m.auth.Authenticate(r); err != nil {
+			if ae, ok := err.(*security.AuthError); ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(ae.Status)
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":` + security.Quote(ae.Msg) + `},"id":null}`))
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 	m.sse.ServeHTTP(w, r)
 }
 
 // HandleMessage serves legacy /mcp/message POST for SSE clients.
 func (m *Manager) HandleMessage(w http.ResponseWriter, r *http.Request) {
+	// Cùng fail-closed auth như /mcp — POST endpoint không được mở hơn.
+	if m.auth != nil {
+		if _, err := m.auth.Authenticate(r); err != nil {
+			if ae, ok := err.(*security.AuthError); ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(ae.Status)
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":` + security.Quote(ae.Msg) + `},"id":null}`))
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 	m.sse.ServeHTTP(w, r)
 }
 
@@ -368,4 +469,25 @@ func (m *Manager) GetRegisteredTools() []ToolRecord {
 // GetTool returns a specific tool by name from the registry
 func (m *Manager) GetTool(name string) (ToolRecord, bool) {
 	return m.registry.Get(name)
+}
+
+// handleDispatcherTool routes TiBrain built-in tools to the Dispatcher
+func (m *Manager) handleDispatcherTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	toolName := req.Params.Name
+
+	// Type assert Arguments to map[string]interface{}
+	args, ok := req.Params.Arguments.(map[string]interface{})
+	if !ok {
+		args = make(map[string]interface{})
+	}
+
+	result := m.dispatcher.Execute(ctx, toolName, args)
+
+	if !result.Success {
+		return mcp.NewToolResultError(result.Error), nil
+	}
+
+	// Convert result to JSON text
+	importJson, _ := json.Marshal(result.Result)
+	return mcp.NewToolResultText(string(importJson)), nil
 }

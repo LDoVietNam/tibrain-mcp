@@ -24,9 +24,9 @@ type mockTool struct {
 	returnErr   error
 }
 
-func (m *mockTool) Name() string         { return m.name }
-func (m *mockTool) Description() string  { return m.description }
-func (m *mockTool) IsLoaded() bool       { return true }
+func (m *mockTool) Name() string        { return m.name }
+func (m *mockTool) Description() string { return m.description }
+func (m *mockTool) IsLoaded() bool      { return true }
 
 func (m *mockTool) Execute(_ context.Context, _ map[string]interface{}) (interface{}, error) {
 	atomic.AddInt32(&m.calls, 1)

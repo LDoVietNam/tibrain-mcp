@@ -52,10 +52,10 @@ func TestWorkflowStore_SaveLoad(t *testing.T) {
 
 	t.Run("save then load round-trip", func(t *testing.T) {
 		st := &workflowState{
-			ID:      "roundtrip",
-			Status:  "pending",
-			Steps:   []string{"echo a", "echo b"},
-			Cursor:  0,
+			ID:        "roundtrip",
+			Status:    "pending",
+			Steps:     []string{"echo a", "echo b"},
+			Cursor:    0,
 			UpdatedAt: time.Now(),
 		}
 		if err := ws.save(st); err != nil {

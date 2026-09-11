@@ -14,6 +14,6 @@ type AsyncWriter = dbpkg.AsyncWriter
 
 // NewAsyncWriter creates a new async writer
 // DEPRECATED: Use internal/db.NewAsyncWriter instead
-func NewAsyncWriter(db *sql.DB, bufferSize int) *AsyncWriter {
+func NewAsyncWriter(db *sql.DB, bufferSize int) (*AsyncWriter, error) {
 	return dbpkg.NewAsyncWriter(db, bufferSize)
 }

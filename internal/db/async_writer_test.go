@@ -37,7 +37,10 @@ func TestNewAsyncWriter(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 100)
+	aw, err := NewAsyncWriter(db, 100)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	if aw == nil {
 		t.Fatal("expected non-nil AsyncWriter")
 	}
@@ -51,15 +54,13 @@ func TestNewAsyncWriter(t *testing.T) {
 	aw.Close()
 }
 
-// TestNewAsyncWriter_NilDB verifies panic on nil db.
+// TestNewAsyncWriter_NilDB verifies NewAsyncWriter returns error on nil db.
 func TestNewAsyncWriter_NilDB(t *testing.T) {
 	t.Parallel()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic when db is nil")
-		}
-	}()
-	_ = NewAsyncWriter(nil, 10)
+	_, err := NewAsyncWriter(nil, 10)
+	if err == nil {
+		t.Error("expected error when db is nil")
+	}
 }
 
 // TestNewAsyncWriter_DefaultBufferSize verifies non-positive buffer falls back to default.
@@ -69,7 +70,10 @@ func TestNewAsyncWriter_DefaultBufferSize(t *testing.T) {
 	defer db.Close()
 
 	for _, sz := range []int{0, -1, -100} {
-		aw := NewAsyncWriter(db, sz)
+		aw, err := NewAsyncWriter(db, sz)
+		if err != nil {
+			t.Fatalf("NewAsyncWriter error: %v", err)
+		}
 		if cap(aw.jobQueue) != 100 {
 			t.Errorf("bufferSize=%d: expected default cap 100, got %d", sz, cap(aw.jobQueue))
 		}
@@ -83,13 +87,16 @@ func TestEnqueue_Queueing(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
-	if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "job-1"); err != nil {
+	if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "job-1"); err != nil {
 		t.Fatalf("unexpected Enqueue error: %v", err)
 	}
-	if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "job-2"); err != nil {
+	if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "job-2"); err != nil {
 		t.Fatalf("unexpected Enqueue error: %v", err)
 	}
 
@@ -118,10 +125,13 @@ func TestEnqueue_BlockedWriter(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 
-	err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "nope")
+	err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "nope")
 	if !errors.Is(err, ErrWriterClosed) {
 		t.Errorf("expected ErrWriterClosed, got %v", err)
 	}
@@ -139,7 +149,8 @@ func TestEnqueueContext_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := aw.EnqueueContext(ctx, "INSERT INTO test_queue (value) VALUES (?)", "blocked")
+	var err error
+	err = aw.EnqueueContext(ctx, "INSERT INTO test_queue (value) VALUES (?)", "blocked")
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -165,7 +176,8 @@ func TestEnqueueContext_EnqueueFullBuffer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	err := aw.EnqueueContext(ctx, "INSERT INTO test_queue (value) VALUES (?)", "second")
+	var err error
+	err = aw.EnqueueContext(ctx, "INSERT INTO test_queue (value) VALUES (?)", "second")
 	if err == nil {
 		t.Error("expected context deadline error, got nil")
 	}
@@ -179,10 +191,13 @@ func TestEnqueueContext_AfterClose(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 
-	err := aw.EnqueueContext(context.Background(), "INSERT INTO test_queue (value) VALUES (?)", "nope")
+	err = aw.EnqueueContext(context.Background(), "INSERT INTO test_queue (value) VALUES (?)", "nope")
 	if !errors.Is(err, ErrWriterClosed) {
 		t.Errorf("expected ErrWriterClosed, got %v", err)
 	}
@@ -193,10 +208,13 @@ func TestClose_DrainsQueue(t *testing.T) {
 	t.Parallel()
 	db := testAsyncDB(t)
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 
 	for i := 0; i < 10; i++ {
-		if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("row-%d", i)); err != nil {
+		if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("row-%d", i)); err != nil {
 			t.Fatalf("unexpected Enqueue error: %v", err)
 		}
 	}
@@ -220,7 +238,10 @@ func TestClose_DoubleClose(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 
 	defer func() {
@@ -237,11 +258,14 @@ func TestFlush_ProcessesPending(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	for i := 0; i < 5; i++ {
-		if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("v%d", i)); err != nil {
+		if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("v%d", i)); err != nil {
 			t.Fatalf("unexpected Enqueue error: %v", err)
 		}
 	}
@@ -258,7 +282,10 @@ func TestFlush_AfterClose(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 	// Should not panic.
 	aw.Flush()
@@ -270,10 +297,13 @@ func TestStats(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
-	if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
+	if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
 		t.Fatalf("unexpected Enqueue error: %v", err)
 	}
 	aw.Flush()
@@ -297,10 +327,13 @@ func TestMetrics(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
-	if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
+	if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
 		t.Fatalf("unexpected Enqueue error: %v", err)
 	}
 
@@ -325,7 +358,10 @@ func TestCurrentBatchSize(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	if aw.CurrentBatchSize() != 0 {
@@ -348,14 +384,17 @@ func TestFlushDuration(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	if aw.FlushDuration() != 0 {
 		t.Errorf("expected 0 duration before any flush, got %v", aw.FlushDuration())
 	}
 
-	if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
+	if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "a"); err != nil {
 		t.Fatalf("unexpected Enqueue error: %v", err)
 	}
 	aw.Flush()
@@ -384,12 +423,15 @@ func slowQuery() string {
 // Enqueue/EnqueueContext call will block until the worker drains a job.
 func busyWriter(t *testing.T, db *sql.DB, bufferSize int) *AsyncWriter {
 	t.Helper()
-	aw := NewAsyncWriter(db, bufferSize)
+	aw, err := NewAsyncWriter(db, bufferSize)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 
 	// Enqueue bufferSize+1 slow jobs: the first occupies the worker (in-flight),
 	// and the remaining bufferSize jobs fill the channel to its capacity.
 	for i := 0; i <= bufferSize; i++ {
-		if err := aw.Enqueue(slowQuery()); err != nil {
+		if err = aw.Enqueue(slowQuery()); err != nil {
 			t.Fatalf("failed to enqueue slow job %d: %v", i, err)
 		}
 	}
@@ -423,11 +465,14 @@ func TestEnqueue_DbError(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	// Reference a missing table to force a db error inside the worker.
-	err := aw.Enqueue("INSERT INTO nonexistent_table (value) VALUES (?)", "bad")
+	err = aw.Enqueue("INSERT INTO nonexistent_table (value) VALUES (?)", "bad")
 	if err != nil {
 		t.Errorf("Enqueue should not propagate db-level errors, got %v", err)
 	}
@@ -444,7 +489,10 @@ func TestConcurrentEnqueue(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 50)
+	aw, err := NewAsyncWriter(db, 50)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	const goroutines = 20
@@ -486,10 +534,13 @@ func TestEnqueue_DropsAfterCloseRace(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 
-	err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "late")
+	err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", "late")
 	if !errors.Is(err, ErrWriterClosed) {
 		t.Errorf("expected ErrWriterClosed, got %v", err)
 	}
@@ -500,10 +551,13 @@ func TestEnqueueContext_DropsAfterCloseRace(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	aw.Close()
 
-	err := aw.EnqueueContext(context.Background(), "INSERT INTO test_queue (value) VALUES (?)", "late")
+	err = aw.EnqueueContext(context.Background(), "INSERT INTO test_queue (value) VALUES (?)", "late")
 	if !errors.Is(err, ErrWriterClosed) {
 		t.Errorf("expected ErrWriterClosed, got %v", err)
 	}
@@ -515,7 +569,10 @@ func TestDBReturnsConnection(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	if aw.DB() != db {
@@ -530,12 +587,15 @@ func TestEnqueue_FillBuffer(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 3)
+	aw, err := NewAsyncWriter(db, 3)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	// Enqueue up to the buffer capacity (worker drains in background, so this should not block).
 	for i := 0; i < 3; i++ {
-		if err := aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("fill-%d", i)); err != nil {
+		if err = aw.Enqueue("INSERT INTO test_queue (value) VALUES (?)", fmt.Sprintf("fill-%d", i)); err != nil {
 			t.Fatalf("unexpected Enqueue error at %d: %v", i, err)
 		}
 	}
@@ -554,7 +614,10 @@ func TestEnqueue_AtomicStatConsistency(t *testing.T) {
 	db := testAsyncDB(t)
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 50)
+	aw, err := NewAsyncWriter(db, 50)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	defer aw.Close()
 
 	var enqErrs int64

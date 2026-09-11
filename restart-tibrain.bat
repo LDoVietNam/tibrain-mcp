@@ -22,24 +22,42 @@ echo [TiBrain] Starting TiBrain on port 3005...
 REM Build with GOGC=off workaround for Go 1.26.6 + modernc.org/sqlite compiler bug
 REM GOGC=off disables GC during build, -p=1 forces single-threaded compilation
 REM This prevents segfault in SSA/DSE passes (signal 0xc000001d)
+REM
+REM Lưu ý 2026-09-12: binary mới KHÔNG đọc flag --port/--host (main.go đọc env
+REM TIBRAIN_PORT/TIBRAIN_HOST). Phải set env TRƯỚC khi start.
 
 if not exist Z:\03_DATA\bin\tibrain.exe (
     echo [TiBrain] Binary not found, building first...
-    cd /d Z:\01_PROJECTS\apps\tibrain
+    cd /d Z:\01_PROJECTS\apps\products\tibrain
     set GOOS=windows
     set GOARCH=amd64
     set GOGC=off
     go build -p=1 -o Z:\03_DATA\bin\tibrain.exe .
     if errorlevel 1 (
         echo [TiBrain] Build failed!
-        pause
         exit /b 1
     )
     echo [TiBrain] Build successful: Z:\03_DATA\bin\tibrain.exe
 )
 
-REM Start TiBrain
-start /b Z:\03_DATA\bin\tibrain.exe --port 3005 --host 127.0.0.1
+REM Start TiBrain — port/host qua env (binary bỏ flag --port/--host)
+set TIBRAIN_PORT=3005
+set TIBRAIN_HOST=127.0.0.1
+
+REM Auth: đọc bearer token từ Z:\00_SECRET\router.env (single source of truth
+REM theo security rules — KHÔNG hardcode token trong script)
+set "ROUTER_ENV=Z:\00_SECRET\router.env"
+set "TIBRAIN_MCP_BEARER_TOKEN="
+if exist "%ROUTER_ENV%" (
+    for /f "usebackq tokens=1,* delims==" %%a in (`findstr /b /c:"TIBRAIN_MCP_BEARER_TOKEN=" "%ROUTER_ENV%"`) do (
+        set "TIBRAIN_MCP_BEARER_TOKEN=%%b"
+    )
+)
+if not defined TIBRAIN_MCP_BEARER_TOKEN (
+    echo [TiBrain] WARNING: TIBRAIN_MCP_BEARER_TOKEN khong co trong router.env — MCP /mcp se tu choi moi request - fail-closed.
+)
+
+start /b Z:\03_DATA\bin\tibrain.exe
 
 REM Wait and verify
 timeout /t 3 /nobreak >nul
@@ -49,6 +67,7 @@ curl -s -m 5 http://localhost:3005/health >nul 2>&1 && (
     echo [TiBrain] Health check: OK
 ) || (
     echo [TiBrain] WARNING: Health check failed. Check stdout.log
+    exit /b 1
 )
 
-pause
+exit /b 0

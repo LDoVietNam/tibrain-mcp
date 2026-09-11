@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = "Stop"
 
-$TIBRAIN_DIR = "Z:\01_PROJECTS\apps\tibrain"
+$TIBRAIN_DIR = "Z:\01_PROJECTS\apps\products\tibrain"
 $BINARY_NAME = "tibrain.exe"
 
 Write-Host "Building TiBrain..." -ForegroundColor Green

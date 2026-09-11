@@ -41,19 +41,19 @@ func TestNewPolicyEvaluator_DefaultDenyMode(t *testing.T) {
 
 func TestEvaluate_QuarantineDecision(t *testing.T) {
 	tests := []struct {
-		name        string
-		toolID      string
-		args        map[string]interface{}
-		wantID      string
-		wantAction  ActionType
-		wantTool    string
-		wantResult  Decision
+		name         string
+		toolID       string
+		args         map[string]interface{}
+		wantID       string
+		wantAction   ActionType
+		wantTool     string
+		wantResult   Decision
 		wantPriority int
 	}{
 		{
-			name:   "external tool quarantined",
-			toolID: "git",
-			args:   map[string]interface{}{"command": "status"},
+			name:         "external tool quarantined",
+			toolID:       "git",
+			args:         map[string]interface{}{"command": "status"},
 			wantID:       "quarantine-external",
 			wantAction:   ActionCallTool,
 			wantTool:     "git",
@@ -61,9 +61,9 @@ func TestEvaluate_QuarantineDecision(t *testing.T) {
 			wantPriority: 100,
 		},
 		{
-			name:   "empty tool id",
-			toolID: "",
-			args:   nil,
+			name:         "empty tool id",
+			toolID:       "",
+			args:         nil,
 			wantID:       "quarantine-external",
 			wantAction:   ActionCallTool,
 			wantTool:     "",
@@ -71,9 +71,9 @@ func TestEvaluate_QuarantineDecision(t *testing.T) {
 			wantPriority: 100,
 		},
 		{
-			name:   "nil args",
-			toolID: "ls",
-			args:   nil,
+			name:         "nil args",
+			toolID:       "ls",
+			args:         nil,
 			wantID:       "quarantine-external",
 			wantAction:   ActionCallTool,
 			wantTool:     "ls",
@@ -81,9 +81,9 @@ func TestEvaluate_QuarantineDecision(t *testing.T) {
 			wantPriority: 100,
 		},
 		{
-			name:   "complex args",
-			toolID: "shell",
-			args:   map[string]interface{}{"cmd": "rm -rf /", "env": []string{"PATH=/bin"}},
+			name:         "complex args",
+			toolID:       "shell",
+			args:         map[string]interface{}{"cmd": "rm -rf /", "env": []string{"PATH=/bin"}},
 			wantID:       "quarantine-external",
 			wantAction:   ActionCallTool,
 			wantTool:     "shell",
@@ -136,65 +136,65 @@ func TestEvaluateRequest(t *testing.T) {
 		want     Decision
 	}{
 		{
-			name:   "valid action and tool",
-			mode:   "default-deny",
-			action: ActionCallTool,
+			name:     "valid action and tool",
+			mode:     "default-deny",
+			action:   ActionCallTool,
 			resource: "file.txt",
 			tool:     "reader",
 			want:     DecisionAllow,
 		},
 		{
-			name:   "empty action denied",
-			mode:   "default-deny",
-			action: "",
+			name:     "empty action denied",
+			mode:     "default-deny",
+			action:   "",
 			resource: "file.txt",
 			tool:     "reader",
 			want:     DecisionDeny,
 		},
 		{
-			name:   "empty tool denied",
-			mode:   "default-deny",
-			action: ActionCallTool,
+			name:     "empty tool denied",
+			mode:     "default-deny",
+			action:   ActionCallTool,
 			resource: "file.txt",
 			tool:     "",
 			want:     DecisionDeny,
 		},
 		{
-			name:   "both empty denied",
-			mode:   "default-deny",
-			action: "",
+			name:     "both empty denied",
+			mode:     "default-deny",
+			action:   "",
 			resource: "",
 			tool:     "",
 			want:     DecisionDeny,
 		},
 		{
-			name:   "valid in default-allow mode",
-			mode:   "default-allow",
-			action: ActionListTools,
+			name:     "valid in default-allow mode",
+			mode:     "default-allow",
+			action:   ActionListTools,
 			resource: "",
 			tool:     "lister",
 			want:     DecisionAllow,
 		},
 		{
-			name:   "list_resources allowed",
-			mode:   "default-deny",
-			action: ActionListResources,
+			name:     "list_resources allowed",
+			mode:     "default-deny",
+			action:   ActionListResources,
 			resource: "resource://uri",
 			tool:     "resources",
 			want:     DecisionAllow,
 		},
 		{
-			name:   "read_resource allowed",
-			mode:   "default-deny",
-			action: ActionReadResource,
+			name:     "read_resource allowed",
+			mode:     "default-deny",
+			action:   ActionReadResource,
 			resource: "resource://file",
 			tool:     "reader",
 			want:     DecisionAllow,
 		},
 		{
-			name:   "get_prompt allowed",
-			mode:   "default-deny",
-			action: ActionGetPrompt,
+			name:     "get_prompt allowed",
+			mode:     "default-deny",
+			action:   ActionGetPrompt,
 			resource: "prompt://test",
 			tool:     "prompts",
 			want:     DecisionAllow,
@@ -218,39 +218,39 @@ func TestEvaluateRequest(t *testing.T) {
 
 func TestValidateMCPServer(t *testing.T) {
 	tests := []struct {
-		name string
-		mode string
-		server string
+		name    string
+		mode    string
+		server  string
 		wantErr string
 	}{
 		{
-			name:   "non-empty server quarantined",
-			mode:   "default-deny",
-			server: "filesystem",
+			name:    "non-empty server quarantined",
+			mode:    "default-deny",
+			server:  "filesystem",
 			wantErr: "server requires quarantine verification",
 		},
 		{
-			name:   "another server quarantined",
-			mode:   "default-deny",
-			server: "git-server",
+			name:    "another server quarantined",
+			mode:    "default-deny",
+			server:  "git-server",
 			wantErr: "server requires quarantine verification",
 		},
 		{
-			name:   "empty server name error",
-			mode:   "default-deny",
-			server: "",
+			name:    "empty server name error",
+			mode:    "default-deny",
+			server:  "",
 			wantErr: "server name required",
 		},
 		{
-			name:   "whitespace server name quarantined (not empty)",
-			mode:   "default-deny",
-			server: "   ",
+			name:    "whitespace server name quarantined (not empty)",
+			mode:    "default-deny",
+			server:  "   ",
 			wantErr: "server requires quarantine verification",
 		},
 		{
-			name:   "default-allow mode still quarantines",
-			mode:   "default-allow",
-			server: "database",
+			name:    "default-allow mode still quarantines",
+			mode:    "default-allow",
+			server:  "database",
 			wantErr: "server requires quarantine verification",
 		},
 	}
@@ -300,9 +300,9 @@ func TestEvaluateOperator_AlwaysDeny(t *testing.T) {
 
 func TestActionTypeConstants(t *testing.T) {
 	tests := []struct {
-		name   string
-		got    ActionType
-		want   string
+		name string
+		got  ActionType
+		want string
 	}{
 		{"ActionListTools", ActionListTools, "list_tools"},
 		{"ActionCallTool", ActionCallTool, "call_tool"},

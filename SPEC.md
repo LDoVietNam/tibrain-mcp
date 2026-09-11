@@ -21,27 +21,18 @@
 | **T-011** Package modularization | ✅ Done | Created internal/rag, internal/orchestration, internal/cloudflare, internal/predictive; moved KnowledgeIndexer, TiAgentOrchestrator, IntegrationManager, RetrievalRouter |
 | **T-012** AsyncWriter metrics | ✅ Done | Background flusher, EnqueueContext, currentBatchSize, Metrics(), Stats() |
 | **T-013** Prompt Observability APIs | ✅ Done | POST /api/v1/prompt/preflight, POST /api/v1/prompt/feedback, GET /api/v1/prompt/catalog/version |
-| **T-014** Prompt Canary Deployment | ✅ Done | POST /api/v1/prompt/{id}/canary, POST /api/v1/prompt/{id}/promote, POST /api/v1/prompt/{id}/rollback |
-| **T-015** Prompt Intelligence Dashboard | ✅ Done | GET /api/v1/prompt/metrics, GET /api/v1/prompt/dashboard |
+| **T-014** Prompt Canary Deployment | ✅ Done | POST /api/prompts/{id}/canary, /promote, /rollback |
+| **T-015** Prompt Intelligence Dashboard | ✅ Done | GET /api/prompts/metrics, GET /api/prompts, GET /api/prompts/{id}/versions |
+| **PI-TB-007** Unit/contract tests (policy, privacy, schema mismatch, latency) | ✅ Done | `policy_filter_test.go`, `privacy_latency_test.go` |
+| **PI-TB-008** E2E + failure injection (restart/timeout) | ✅ Done | `e2e_integration_test.go` (`-tags integration`) |
+| **PI-TB-009** Ingestion pipeline (provenance, license review, dedup, approval) | ✅ Done | `ingestion.go` + `/api/v1/prompt/ingest`, `/approve`, `/reject` |
 
 ---
 
 ## Immediate Action Required
 
-**Verify Build** — Run on local machine:
-```powershell
-cd Z:\01_PROJECTS\apps\tibrain
-go build ./...
-```
-
-Or use the created script:
-```powershell
-.\build.ps1
-```
-
-**If build succeeds** → Proceed to Refactor Phase (T-011)
-
-**If build fails** → Report errors for immediate correction
+Build verified (2026-08-10): `go build ./...` passes; `go test ./internal/prompt/...` passes.
+E2E chạy riêng với: `go test -tags integration ./internal/prompt/... -run E2E -v`
 
 ---
 
@@ -124,16 +115,16 @@ Contract canonical: [`docs/PROMPT_INTELLIGENCE_CONTRACT.md`](./docs/PROMPT_INTEL
 
 ### Điều kiện bắt đầu
 
-- Build foundation và shared DB migration framework chạy xanh.
-- ADR TiRouter `docs/adr/0001-prompt-intelligence-boundary.md` vẫn ở trạng thái Accepted.
-- Schema version `1.0` có contract test chung giữa hai repo.
+- ✅ Build foundation và shared DB migration framework chạy xanh.
+- ⚠️ ADR TiRouter `docs/adr/0001-prompt-intelligence-boundary.md` — file nằm phía repo Tirouter, cần kiểm tra trạng thái Accepted.
+- ✅ Schema version `1.0` có contract test chung giữa hai repo.
 
 ### Điều kiện hoàn tất
 
-- Preflight p95 cache-warm đạt mục tiêu ban đầu dưới `150 ms` trong môi trường local test.
-- TiRouter timeout `250 ms` luôn fail-open.
-- Không có task/response raw hoặc credential trong DB/log/feedback fixtures.
-- Canary hoàn thành theo `observe → suggest → apply allowlist` và có rollback.
+- ✅ Preflight p95 cache-warm dưới `150 ms` (test latency `TestLatency_FastPathPreflight`).
+- ✅ TiRouter timeout fail-open (E2E `TestE2E_FailOpenOnTimeout` / `TestE2E_FailOpenOnServerRestart`).
+- ✅ Không có task/response raw hoặc credential trong DB/log/feedback fixtures (`TestPrivacy_*`).
+- ✅ Canary có deploy/promote/rollback; plugin TiRouter (PI-TR-*) là bước còn lại.
 
 ---
 

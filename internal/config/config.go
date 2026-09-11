@@ -167,7 +167,7 @@ func Default() *Config {
 			// Sources mặc định rỗng: chỉ index khi operator khai báo
 			// trong config.yaml — tránh quét nhầm thư mục.
 		},
-		Audit:       AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
+		Audit: AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
 		// Legacy TiBrain defaults
 		CLIRegistry:    "",
 		HandoffTrack:   "",

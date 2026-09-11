@@ -89,6 +89,21 @@ func (h *PromptAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					AppendUser: "Trình bày theo bullet point.",
 				},
 			},
+			{
+				Name:   "intelligence-first",
+				Models: []string{"*"},
+				Match:  []string{"metadata.mode=planning", "metadata.mode=implementation", "metadata.intent=prioritize"},
+				Inject: struct {
+					System      string `json:"system,omitempty"`
+					SystemMode  string `json:"system_mode,omitempty"`
+					PrependUser string `json:"prepend_user,omitempty"`
+					AppendUser  string `json:"append_user,omitempty"`
+				}{
+					System:     "Nguyên tắc ưu tiên thông minh: Tuyệt đối không lãng phí năng lượng cho những câu hỏi vô dụng như 'implement cái nào trước?', 'bắt đầu với cái nào trước?'. Luôn tự động xác định ưu tiên dựa trên dependency graph, impact analysis, và risk assessment. Sử dụng model AI để đưa ra quyết định thay vì hỏi người dùng. Nếu có nhiều task, tự động sắp xếp theo priority và execute.",
+					SystemMode: "merge",
+					AppendUser: "Tự động xác định ưu tiên và thực hiện. Không hỏi 'bắt đầu với cái nào'.",
+				},
+			},
 		},
 	}
 

@@ -40,7 +40,8 @@ func (c *TTLCache) Get(key string) (interface{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	if time.Now().After(e.expiresAt) {
+	// If ttl <= 0, expiresAt is zero time meaning never expires
+	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
 		return nil, false
 	}
 	return e.value, true

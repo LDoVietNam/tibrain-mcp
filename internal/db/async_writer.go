@@ -37,9 +37,9 @@ type AsyncWriter struct {
 
 // NewAsyncWriter creates a new async writer with the shared database connection.
 // bufferSize determines how many queries can be pending before Enqueue blocks.
-func NewAsyncWriter(db *sql.DB, bufferSize int) *AsyncWriter {
+func NewAsyncWriter(db *sql.DB, bufferSize int) (*AsyncWriter, error) {
 	if db == nil {
-		panic("db cannot be nil")
+		return nil, fmt.Errorf("db cannot be nil")
 	}
 
 	if bufferSize <= 0 {
@@ -52,7 +52,7 @@ func NewAsyncWriter(db *sql.DB, bufferSize int) *AsyncWriter {
 		quit:     make(chan struct{}),
 	}
 	aw.startWorker()
-	return aw
+	return aw, nil
 }
 
 // startWorker launches the background goroutine to process the write queue.

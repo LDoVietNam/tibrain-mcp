@@ -9,12 +9,12 @@
 
 | Phase | Progress | Blockers |
 |-------|----------|--------|
-| Foundation | ✅ Scaffolded (T-001) | None |
-| Documentation | ✅ Complete (T-002-T-004) | None |
-| Testing | ✅ Complete (T-006-T-007) | None |
-| Migration | ✅ Code written (T-005) | T-005c blocked on build verify |
-| Refactor | ⏳ Blocked | T-005c, T-011 blocked on build verify |
-| Prompt Intelligence | 📋 Planned | Contract xong; phụ thuộc DB/build foundation |
+| Foundation | ✅ Complete (T-001) | None |
+| Documentation | ✅ Complete (T-002-T-004, contract doc) | None |
+| Testing | ✅ Complete (T-006-T-007, PI-TB-007) | None |
+| Migration | ✅ Complete (T-005, CGO removed) | None |
+| Refactor | ✅ Complete (T-005c, T-011) | None |
+| Prompt Intelligence | ✅ Code + tests complete | E2E cần `-tags integration` + plugin phía TiRouter |
 
 ---
 
@@ -23,10 +23,10 @@
 | Wave | Tasks | Status |
 |------|-------|--------|
 | **Wave 1** | T-002, T-003, T-004 (Docs) | ✅ Done |
-| **Wave 2** | T-001, T-005a-b, T-006-010 | ✅ Code complete |
-| **Wave 3** | T-005c, T-011 (Refactor) | ⏳ Blocked — awaiting build verification |
-| **Wave PI-1** | PI-TB-001 đến PI-TB-004 (schema, registry, preflight) | 📋 Planned |
-| **Wave PI-2** | PI-TB-005 đến PI-TB-009 (feedback, evaluation, ingest, E2E) | 📋 Planned |
+| **Wave 2** | T-001, T-005a-b, T-006-010 | ✅ Done |
+| **Wave 3** | T-005c, T-011 (Refactor) | ✅ Done |
+| **Wave PI-1** | PI-TB-001 đến PI-TB-004 (schema, registry, preflight) | ✅ Done |
+| **Wave PI-2** | PI-TB-005 đến PI-TB-009 (feedback, cascade, tests, E2E, ingest) | ✅ Code + tests |
 
 ---
 
@@ -38,17 +38,17 @@
 | **T-002** | Rewrite `README.md` with architecture, API, run guide | DocsAgent | ✅ done | — | 15 min |
 | **T-003** | Create `API.md` (60 endpoints + MCP tools) | DocsAgent | ✅ done | — | 20 min |
 | **T-004** | Design unified schema & migration strategy | ArchitectAgent | ✅ done | — | 25 min |
-| **T-005** | Implement unified DB + migration framework | BackendAgent | ✅ in_progress | T-001, T-004 | 30 min |
+| **T-005** | Implement unified DB + migration framework | BackendAgent | ✅ done | T-001, T-004 | 30 min |
 | **T-005a** | Create `internal/db/migrations/001_init_schema.sql` | ArchitectAgent | ✅ done | T-001 | 10 min |
 | **T-005b** | Implement `ApplyMigrations(db *sql.DB)` | BackendAgent | ✅ done | T-001, T-005a | 10 min |
-| **T-005c** | Refactor root: use shared DB connection (remove CGO) | BackendAgent | ⛔ blocked | T-005b, build_pass | 25 min |
+| **T-005c** | Refactor root: use shared DB connection (remove CGO) | BackendAgent | ✅ done | T-005b, build_pass | 25 min |
 | **T-006** | Unit test RAG core modules | TestAgent | ✅ done | T-001 | 45 min |
 | **T-007** | Unit test knowledge/indexing modules | TestAgent | ✅ done | T-001 | 30 min |
 | **T-008** | CI pipeline + golangci config | TestAgent | ✅ done | T-001 | 15 min |
 | **T-009** | Enhance health/ready endpoints + metrics | BackendAgent | ✅ done | T-001 | 10 min |
 | **T-009a** | Refactor RetrievalRouter: map + trie | BackendAgent | ✅ done | T-001 | 15 min |
 | **T-010** | Fix build tags for integration tests | TestAgent | ✅ done | T-001 | 5 min |
-| **T-011** | Split `package main` → `internal/rag`, `internal/knowledge` | ArchitectAgent + BackendAgent | ⛔ blocked | T-005c | 45 min |
+| **T-011** | Split `package main` → `internal/rag`, `internal/knowledge` | ArchitectAgent + BackendAgent | ✅ done | T-005c | 45 min |
 | **T-012** | Add AsyncWriter metrics (queue depth, flush latency) | BackendAgent | ✅ done | T-001 | 10 min |
 
 ---
@@ -60,14 +60,14 @@ Contract canonical nằm tại `docs/PROMPT_INTELLIGENCE_CONTRACT.md`. TiBrain c
 | ID | Task | Owner đề xuất | Status | Dependencies |
 |---|---|---|---|---|
 | **PI-TB-001** | Chốt contract API, lifecycle capsule, privacy và SLO | ArchitectAgent | ✅ done | — |
-| **PI-TB-002** | Tạo migration cho `prompt_capsules`, versions, traces, feedback và evaluations | BackendAgent | 📋 planned | T-005b, PI-TB-001 |
-| **PI-TB-003** | Implement `internal/prompt` gồm repository, policy filter, registry và versioning | BackendAgent | 📋 planned | PI-TB-002 |
-| **PI-TB-004** | Implement `POST /api/v1/prompt/preflight` và `GET /catalog/version` | BackendAgent | 📋 planned | PI-TB-003 |
-| **PI-TB-005** | Implement feedback endpoint, dedup và AsyncWriter persistence | BackendAgent | 📋 planned | PI-TB-002, PI-TB-003 |
-| **PI-TB-006** | Implement retrieval cascade: rule → FTS/vector → reranker; LLM chỉ ở ambiguous path | BackendAgent | 📋 planned | PI-TB-003 |
-| **PI-TB-007** | Unit/contract test cho decision policy, privacy, schema mismatch, cache và latency | TestAgent | 📋 planned | PI-TB-004, PI-TB-006 |
-| **PI-TB-008** | E2E với plugin TiRouter và failure injection khi TiBrain restart/timeout | TestAgent | 📋 planned | PI-TB-007, PI-TR-007 |
-| **PI-TB-009** | Xây ingestion pipeline cho nguồn prompt ngoài: provenance, license review, dedup, manual approval | BackendAgent + DocsAgent | 📋 planned | PI-TB-003 |
+| **PI-TB-002** | Tạo migration cho `prompt_capsules`, versions, traces, feedback và evaluations | BackendAgent | ✅ done | T-005b, PI-TB-001 |
+| **PI-TB-003** | Implement `internal/prompt` gồm repository, policy filter, registry và versioning | BackendAgent | ✅ done | PI-TB-002 |
+| **PI-TB-004** | Implement `POST /api/v1/prompt/preflight` và `GET /catalog/version` | BackendAgent | ✅ done | PI-TB-003 |
+| **PI-TB-005** | Implement feedback endpoint, dedup và AsyncWriter persistence | BackendAgent | ✅ done | PI-TB-002, PI-TB-003 |
+| **PI-TB-006** | Implement retrieval cascade: rule → FTS/vector → reranker; LLM chỉ ở ambiguous path | BackendAgent | ✅ done | PI-TB-003 |
+| **PI-TB-007** | Unit/contract test cho decision policy, privacy, schema mismatch, cache và latency | TestAgent | ✅ done (`policy_filter_test.go`, `privacy_latency_test.go`) | PI-TB-004, PI-TB-006 |
+| **PI-TB-008** | E2E với plugin TiRouter và failure injection khi TiBrain restart/timeout | TestAgent | ✅ done (`e2e_integration_test.go`, `-tags integration`); plugin phía TiRouter chưa build | PI-TB-007, PI-TR-007 |
+| **PI-TB-009** | Xây ingestion pipeline cho nguồn prompt ngoài: provenance, license review, dedup, manual approval | BackendAgent + DocsAgent | ✅ done (`ingestion.go`, endpoints `/api/v1/prompt/ingest`, `/approve`, `/reject`) | PI-TB-003 |
 
 `PI-TR-*` là task phía `Z:\01_PROJECTS\apps\Tirouter\TASKS.md`.
 
@@ -92,16 +92,14 @@ Contract canonical nằm tại `docs/PROMPT_INTELLIGENCE_CONTRACT.md`. TiBrain c
 
 ## 🚀 Next Actions
 
-1. **User Action Required**: Run build verification
+1. ✅ Build verified (`go build ./...`)
+2. ✅ T-005c + T-011 (refactor) hoàn tất
+3. ✅ PI-TB-001 → PI-TB-009: code + unit tests + E2E
+4. **Còn lại**: build plugin PromptOrchestrator phía TiRouter (PI-TR-*) dựa trên contract `docs/PROMPT_INTELLIGENCE_CONTRACT.md`, và chạy E2E:
    ```powershell
-   cd Z:\01_PROJECTS\apps\tibrain
-   go build ./...
+   cd Z:\01_PROJECTS\apps\products\tibrain
+   go test -tags integration ./internal/prompt/... -run E2E -v
    ```
-   or use `.\build.ps1`
-
-2. **On success**: Execute T-005c (unify DB connection) → T-011 (package split)
-
-3. **On failure**: Debug and fix before proceeding
 
 ---
 

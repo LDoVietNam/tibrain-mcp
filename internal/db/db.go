@@ -116,9 +116,14 @@ func ApplyMigrations(db *sql.DB) error {
 	fmt.Printf("Found %d files in migrations directory\n", len(files))
 
 	// Sort files to ensure consistent order
+	// Handle both .sql (early migrations 0000-0005) and .up.sql (later migrations 0011+)
 	var fileInfos []os.FileInfo
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".sql") && !strings.HasSuffix(file.Name(), ".down.sql") {
+		if file.IsDir() || strings.HasSuffix(file.Name(), ".bak") || strings.HasSuffix(file.Name(), ".down.sql") {
+			continue
+		}
+		name := file.Name()
+		if strings.HasSuffix(name, ".up.sql") || (strings.HasSuffix(name, ".sql") && !strings.HasSuffix(name, ".up.sql")) {
 			info, err := file.Info()
 			if err != nil {
 				return err
@@ -141,11 +146,10 @@ func ApplyMigrations(db *sql.DB) error {
 		}
 
 		// Check if migration already applied
-		var applied bool
 		var existingChecksum string
-		err := db.QueryRow("SELECT 1, checksum FROM schema_migrations WHERE version = ?", versionStr).Scan(&applied, &existingChecksum)
-		if err == nil && applied {
-			// Drift detection: compare checksum
+		err := db.QueryRow("SELECT checksum FROM schema_migrations WHERE version = ?", versionStr).Scan(&existingChecksum)
+		if err == nil {
+			// Migration recorded as applied: verify checksum for drift detection
 			content, _ := os.ReadFile(filepath.Join(migrationsDir, file.Name()))
 			newChecksum := fmt.Sprintf("%x", md5.Sum(content))
 			if existingChecksum != newChecksum {

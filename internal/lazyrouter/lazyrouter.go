@@ -52,7 +52,11 @@ func (t *LazyTool) IsLoaded() bool {
 func (t *LazyTool) load() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.loadLocked()
+}
 
+// loadLocked performs the actual load. Caller must hold t.mu for writing.
+func (t *LazyTool) loadLocked() error {
 	if t.loaded {
 		return nil
 	}
@@ -71,7 +75,7 @@ func (t *LazyTool) load() error {
 func (t *LazyTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	t.mu.Lock()
 	if !t.loaded {
-		if err := t.load(); err != nil {
+		if err := t.loadLocked(); err != nil {
 			t.mu.Unlock()
 			return nil, err
 		}

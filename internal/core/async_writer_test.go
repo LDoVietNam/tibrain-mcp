@@ -16,18 +16,18 @@ func TestNewAsyncWriter(t *testing.T) {
 	}
 	defer db.Close()
 
-	aw := NewAsyncWriter(db, 10)
+	aw, err := NewAsyncWriter(db, 10)
+	if err != nil {
+		t.Fatalf("NewAsyncWriter error: %v", err)
+	}
 	if aw == nil {
 		t.Fatal("NewAsyncWriter() returned nil")
 	}
 }
 
 func TestNewAsyncWriter_NilDB(t *testing.T) {
-	// This should panic based on the implementation
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewAsyncWriter(nil) should panic")
-		}
-	}()
-	NewAsyncWriter(nil, 10)
+	_, err := NewAsyncWriter(nil, 10)
+	if err == nil {
+		t.Error("expected error when db is nil")
+	}
 }

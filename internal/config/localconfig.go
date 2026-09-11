@@ -3,9 +3,12 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 // LocalConfig represents a project-level configuration file.
@@ -62,10 +65,17 @@ func loadLocalConfig(path string) (*LocalConfig, error) {
 }
 
 func loadYamlConfig(data []byte) (*LocalConfig, error) {
-	// yaml unmarshaling stub — requires importing yaml.v3
-	return nil, fmt.Errorf("yaml parsing not yet implemented")
+	cfg := &LocalConfig{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse yaml config: %w", err)
+	}
+	return cfg, nil
 }
 
 func loadJsonConfig(data []byte) (*LocalConfig, error) {
-	return nil, fmt.Errorf("json parsing not yet implemented")
+	cfg := &LocalConfig{}
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse json config: %w", err)
+	}
+	return cfg, nil
 }

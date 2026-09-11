@@ -71,6 +71,70 @@ func skipIfNoToken(t *testing.T) {
 	}
 }
 
+// initializeSession thực hiện handshake initialize + notifications/initialized
+// và trả về Mcp-Session-Id. Transport stateful của SDK v0.56.0 yêu cầu header
+// này trên mọi request sau handshake — không có nó server trả 404.
+func initializeSession(t *testing.T, client *http.Client, token string) string {
+	t.Helper()
+	req := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "initialize",
+		Params: InitializeParams{
+			ProtocolVersion: "2024-11-05",
+			Capabilities:    map[string]interface{}{},
+			ClientInfo: map[string]interface{}{
+				"name":    "tibrain-e2e-test",
+				"version": "1.0",
+			},
+		},
+		ID: 0,
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Failed to marshal initialize request: %v", err)
+	}
+	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Failed to create initialize request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	if !isNoAuthMode() {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		t.Fatalf("Failed to send initialize request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("initialize failed with status %d", resp.StatusCode)
+	}
+	sid := resp.Header.Get("Mcp-Session-Id")
+	if sid == "" {
+		t.Fatal("initialize response missing Mcp-Session-Id header")
+	}
+	// Hoàn tất handshake với notifications/initialized trên cùng session
+	note := JSONRPCRequest{JSONRPC: "2.0", Method: "notifications/initialized", Params: map[string]interface{}{}}
+	nbody, err := json.Marshal(note)
+	if err != nil {
+		t.Fatalf("Failed to marshal notification: %v", err)
+	}
+	nReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(nbody))
+	if err != nil {
+		t.Fatalf("Failed to create notification request: %v", err)
+	}
+	nReq.Header.Set("Content-Type", "application/json")
+	nReq.Header.Set("Mcp-Session-Id", sid)
+	if !isNoAuthMode() {
+		nReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	if nResp, err := client.Do(nReq); err == nil {
+		nResp.Body.Close()
+	}
+	return sid
+}
+
 func TestE2E_Initialize(t *testing.T) {
 	skipIfNoToken(t)
 
@@ -207,6 +271,7 @@ func TestE2E_ToolsList(t *testing.T) {
 
 	client := &http.Client{Timeout: testTimeout}
 	token := getTestToken()
+	sid := initializeSession(t, client, token)
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -224,6 +289,7 @@ func TestE2E_ToolsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
+	httpReq.Header.Set("Mcp-Session-Id", sid)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
 
@@ -299,6 +365,7 @@ func TestE2E_Ping(t *testing.T) {
 
 	client := &http.Client{Timeout: testTimeout}
 	token := getTestToken()
+	sid := initializeSession(t, client, token)
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -317,6 +384,7 @@ func TestE2E_Ping(t *testing.T) {
 		t.Fatalf("Failed to create request: %v", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Mcp-Session-Id", sid)
 
 	// Only add Authorization header if not in no-auth mode
 	if !isNoAuthMode() {
@@ -356,6 +424,7 @@ func TestE2E_Ping(t *testing.T) {
 }
 
 func TestE2E_InvalidAuth(t *testing.T) {
+	skipIfNoToken(t)
 	// Test that missing/invalid auth is rejected
 	// This test should pass (auth should fail) without requiring a token
 	client := &http.Client{Timeout: testTimeout}
@@ -439,6 +508,7 @@ func TestE2E_ToolsCall(t *testing.T) {
 
 	client := &http.Client{Timeout: testTimeout}
 	token := getTestToken()
+	sid := initializeSession(t, client, token)
 
 	// First get tools list to find a valid tool
 	listReq := JSONRPCRequest{
@@ -459,6 +529,7 @@ func TestE2E_ToolsCall(t *testing.T) {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	httpReq.Header.Set("Mcp-Session-Id", sid)
 
 	// Only add Authorization header if not in no-auth mode
 	if !isNoAuthMode() {
@@ -543,6 +614,7 @@ func TestE2E_ToolsCall(t *testing.T) {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	httpReq.Header.Set("Mcp-Session-Id", sid)
 
 	// Only add Authorization header if not in no-auth mode
 	if !isNoAuthMode() {

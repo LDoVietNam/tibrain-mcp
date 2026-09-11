@@ -38,6 +38,14 @@ func NewRegistry() *Registry {
 	}
 }
 
+// globalRegistry is the process-wide tool registry.
+var globalRegistry = NewRegistry()
+
+// GlobalRegistry returns the process-wide tool registry.
+func GlobalRegistry() *Registry {
+	return globalRegistry
+}
+
 // Register adds or replaces a tool and notifies subscribers.
 func (r *Registry) Register(rec ToolRecord) {
 	r.mu.Lock()

@@ -87,6 +87,10 @@ func (lc *LazyClient) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Connect the underlying client
+	if err := client.Connect(ctx); err != nil {
+		return err
+	}
 	lc.mu.Lock()
 	lc.client = client
 	lc.connected = true
@@ -148,6 +152,11 @@ func (lc *LazyClient) ensureConnected(ctx context.Context) (Client, error) {
 
 	client, err := lc.doConnect()
 	if err != nil {
+		return nil, err
+	}
+
+	// Connect the underlying client
+	if err := client.Connect(ctx); err != nil {
 		return nil, err
 	}
 

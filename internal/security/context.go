@@ -15,6 +15,11 @@ func withIdentity(ctx context.Context, identity string) context.Context {
 	return context.WithValue(ctx, identityKey, identity)
 }
 
+// WithIdentity stores the resolved identity in the context (public version).
+func WithIdentity(ctx context.Context, identity string) context.Context {
+	return context.WithValue(ctx, identityKey, identity)
+}
+
 // IdentityFromContext returns the resolved identity, or "anonymous".
 func IdentityFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(identityKey).(string); ok && v != "" {

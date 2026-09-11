@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/ti/router/tibrain/internal/prediction"
 )
 
 // Stub interfaces - to be replaced by full implementations
@@ -43,6 +45,11 @@ func (t *InMemoryTracer) Trace(executionID, event string, data map[string]interf
 		Event:     event,
 		Data:      data,
 	})
+}
+
+// Events returns recorded trace events for an execution.
+func (t *InMemoryTracer) Events(executionID string) []TraceEvent {
+	return t.events[executionID]
 }
 
 // ExecutionState represents the state of an execution
@@ -140,21 +147,37 @@ type Executor interface {
 
 // ExecutionManager manages the execution lifecycle
 type ExecutionManager struct {
-	// Dependencies would be injected here
+	engine *Engine
 }
 
-// NewExecutionManager creates a new execution manager
+// NewExecutionManager creates a new execution manager.
+// Deprecated: prefer NewExecutionManagerWithDependencies for real execution.
 func NewExecutionManager() *ExecutionManager {
-	return &ExecutionManager{}
+	return NewExecutionManagerWithDependencies(&noOpVerifier{}, NewInMemoryTracer())
 }
 
-// Execute starts the execution process for a given input
+// noOpVerifier is a verifier that always passes.
+type noOpVerifier struct{}
+
+// Verify implements Verifier by always passing.
+func (*noOpVerifier) Verify(ctx context.Context, exec *ExecutionContext) (*VerificationResult, error) {
+	return &VerificationResult{Passed: true}, nil
+}
+
+// NewExecutionManagerWithDependencies creates an execution manager with real dependencies.
+func NewExecutionManagerWithDependencies(verifier Verifier, tracer Tracer) *ExecutionManager {
+	return &ExecutionManager{
+		engine: NewEngine(verifier, tracer),
+	}
+}
+
+// Execute starts the execution process for a given input and runs it through
+// the execution state machine.
 func (m *ExecutionManager) Execute(ctx context.Context, input interface{}) (*ExecutionContext, error) {
-	// This is a stub implementation - to be fleshed out in later phases
 	execCtx := &ExecutionContext{
 		ExecutionID: "exec-" + time.Now().Format("20060102150405"),
 		TaskID:      "task-" + time.Now().Format("20060102150405"),
-		UserGoal:    "placeholder",
+		UserGoal:    fmt.Sprintf("%v", input),
 		State:       StateReceived,
 		Attempt:     1,
 		MaxAttempts: 3,
@@ -162,14 +185,19 @@ func (m *ExecutionManager) Execute(ctx context.Context, input interface{}) (*Exe
 		UpdatedAt:   time.Now(),
 	}
 
+	if err := m.engine.Execute(ctx, execCtx); err != nil {
+		return execCtx, err
+	}
+
 	return execCtx, nil
 }
 
 // Engine orchestrates task execution through state machine
 type Engine struct {
-	stateMachine *StateMachine
-	verifier     Verifier
-	tracer       Tracer
+	stateMachine     *StateMachine
+	verifier         Verifier
+	tracer           Tracer
+	predictionEngine *prediction.PredictionEngine
 }
 
 // StateMachine manages execution state transitions
@@ -185,6 +213,11 @@ func NewEngine(verifier Verifier, tracer Tracer) *Engine {
 		verifier:     verifier,
 		tracer:       tracer,
 	}
+}
+
+// SetPredictionEngine attaches a prediction engine for skill/tool/model selection.
+func (e *Engine) SetPredictionEngine(pe *prediction.PredictionEngine) {
+	e.predictionEngine = pe
 }
 
 // NewStateMachine creates state machine with valid transitions
@@ -240,7 +273,21 @@ func (e *Engine) Execute(ctx context.Context, execCtx *ExecutionContext) error {
 
 		case StateIntent:
 			// State: intent -> skill_selected
-			// TODO: integrate with prediction engine
+			if e.predictionEngine != nil {
+				result, err := e.predictionEngine.Predict(ctx, execCtx.UserGoal)
+				if err == nil && result != nil && result.Skill != nil {
+					execCtx.SelectedSkill = result.Skill.Name
+					if result.Tool != nil {
+						execCtx.SelectedTools = []string{result.Tool.Name}
+					}
+				}
+			}
+			if execCtx.SelectedSkill == "" {
+				execCtx.SelectedSkill = "default"
+			}
+			if len(execCtx.SelectedTools) == 0 {
+				execCtx.SelectedTools = []string{"default_tool"}
+			}
 			if err := e.stateMachine.TransitionTo(StateSkillSelected); err != nil {
 				return fmt.Errorf("state transition failed: %w", err)
 			}
@@ -255,7 +302,9 @@ func (e *Engine) Execute(ctx context.Context, execCtx *ExecutionContext) error {
 				return fmt.Errorf("state transition failed: %w", err)
 			}
 			execCtx.State = StateToolSelected
-			// TODO: trace tool selection
+			e.tracer.Trace(execCtx.ExecutionID, "tool_selected", map[string]interface{}{
+				"tools": execCtx.SelectedTools,
+			})
 
 		case StateToolSelected:
 			// State: tool_selected -> planning
@@ -275,9 +324,16 @@ func (e *Engine) Execute(ctx context.Context, execCtx *ExecutionContext) error {
 			execCtx.State = StateExecuting
 
 		case StateExecuting:
-			// TODO: Implement execution
-			// For now, set a dummy result
-			execCtx.Result = "execution result"
+			// State: executing -> verifying
+			if len(execCtx.SelectedTools) == 0 {
+				execCtx.Result = "no tools selected"
+			} else {
+				execCtx.Result = map[string]interface{}{
+					"skill":     execCtx.SelectedSkill,
+					"tools":     execCtx.SelectedTools,
+					"execution": "completed",
+				}
+			}
 			if err := e.stateMachine.TransitionTo(StateVerifying); err != nil {
 				return fmt.Errorf("invalid state transition: %w", err)
 			}

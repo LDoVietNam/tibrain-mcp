@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ti/router/tibrain/internal/memory"
+	"github.com/ti/router/tibrain/internal/rag"
 )
 
 // Dispatcher executes built-in TiBrain tools with real implementations.
@@ -17,19 +18,21 @@ import (
 // rather than a fake success, so callers can never mistake a no-op for a
 // completed action.
 type Dispatcher struct {
-	mem     *memory.CognitiveMemoryManager
-	allowed []string
-	now     func() time.Time
+	mem       *memory.CognitiveMemoryManager
+	retriever *rag.RetrievalRouter
+	allowed   []string
+	now       func() time.Time
 }
 
 // NewDispatcher builds a dispatcher. mem may be nil (tools that need memory
 // will then report not_implemented). allowed is the set of filesystem roots
 // fs.* tools may touch.
-func NewDispatcher(mem *memory.CognitiveMemoryManager, allowed []string) *Dispatcher {
+func NewDispatcher(mem *memory.CognitiveMemoryManager, retriever *rag.RetrievalRouter, allowed []string) *Dispatcher {
 	return &Dispatcher{
-		mem:     mem,
-		allowed: allowed,
-		now:     time.Now,
+		mem:       mem,
+		retriever: retriever,
+		allowed:   allowed,
+		now:       time.Now,
 	}
 }
 
@@ -79,14 +82,35 @@ func (d *Dispatcher) execKnowledgeQuery(params map[string]interface{}) *ExecResu
 	if q == "" {
 		return &ExecResult{Success: false, Tool: "tibrain.query", Code: "invalid_argument", Error: "query is required"}
 	}
-	// Knowledge query is served by the RAG layer; without a live retriever we
-	// report not_implemented instead of returning empty/fake results.
-	return &ExecResult{
-		Success: false,
-		Tool:    "tibrain.query",
-		Code:    "not_implemented",
-		Error:   "knowledge retriever not wired to dispatcher",
+
+	if d.retriever == nil {
+		return &ExecResult{
+			Success: false,
+			Tool:    "tibrain.query",
+			Code:    "not_implemented",
+			Error:   "knowledge retriever not wired to dispatcher",
+		}
 	}
+
+	ctx := context.Background()
+	decision := d.retriever.RouteQuery(ctx, q)
+	response, err := d.retriever.ExecuteRoute(ctx, q, decision, nil, nil)
+	if err != nil {
+		return &ExecResult{Success: false, Tool: "tibrain.query", Code: "internal_error", Error: err.Error()}
+	}
+
+	result := map[string]interface{}{
+		"query":      q,
+		"route":      string(decision.Route),
+		"confidence": response.Confidence,
+		"results":    response.Results,
+	}
+
+	if response.Answer != "" {
+		result["answer"] = response.Answer
+	}
+
+	return &ExecResult{Success: true, Tool: "tibrain.query", Result: result}
 }
 
 func (d *Dispatcher) execMemoryStore(params map[string]interface{}) *ExecResult {
