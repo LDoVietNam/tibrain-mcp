@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type MCPServerConfig struct {
 	Args        []string          `yaml:"args,omitempty"`
 	URL         string            `yaml:"url,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
+	Headers     map[string]string `yaml:"headers,omitempty"`
 	Enabled     bool              `yaml:"enabled"`
 	Description string            `yaml:"description,omitempty"`
 	AutoStart   bool              `yaml:"auto_start"`
@@ -234,6 +236,46 @@ func (c *Config) applyEnv() {
 	if c.Auth.BearerTokenEnv == "" {
 		c.Auth.BearerTokenEnv = "TIBRAIN_MCP_BEARER_TOKEN"
 	}
+
+	// Expand environment variables in MCP server configs
+	for i := range c.MCP.Servers {
+		c.MCP.Servers[i].URL = expandEnv(c.MCP.Servers[i].URL)
+		c.MCP.Servers[i].Command = expandEnv(c.MCP.Servers[i].Command)
+		for j := range c.MCP.Servers[i].Args {
+			c.MCP.Servers[i].Args[j] = expandEnv(c.MCP.Servers[i].Args[j])
+		}
+		if c.MCP.Servers[i].Env != nil {
+			for k, v := range c.MCP.Servers[i].Env {
+				c.MCP.Servers[i].Env[k] = expandEnv(v)
+			}
+		}
+		if c.MCP.Servers[i].Headers != nil {
+			for k, v := range c.MCP.Servers[i].Headers {
+				c.MCP.Servers[i].Headers[k] = expandEnv(v)
+			}
+		}
+	}
+}
+
+// expandEnv expands environment variables in the form ${VAR} or ${VAR:-default}
+func expandEnv(s string) string {
+	// Handle ${VAR:-default} syntax
+	re := regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
+	return re.ReplaceAllStringFunc(s, func(match string) string {
+		matches := re.FindStringSubmatch(match)
+		if len(matches) < 2 {
+			return match
+		}
+		varName := matches[1]
+		defaultValue := ""
+		if len(matches) > 2 {
+			defaultValue = matches[2]
+		}
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return defaultValue
+	})
 }
 
 // BearerToken resolves the gateway bearer token from the configured env var or a

@@ -2,6 +2,9 @@
 package main
 
 import (
+	"crypto/subtle"
+	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,14 +12,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ti/router/tibrain/internal/api"
 	"github.com/ti/router/tibrain/internal/cloudflare"
 	"github.com/ti/router/tibrain/internal/config"
 	"github.com/ti/router/tibrain/internal/db"
 	"github.com/ti/router/tibrain/internal/knowledge"
 	"github.com/ti/router/tibrain/internal/mcp"
+	"github.com/ti/router/tibrain/internal/memory"
 	"github.com/ti/router/tibrain/internal/orchestration"
 	"github.com/ti/router/tibrain/internal/predictive"
 	"github.com/ti/router/tibrain/internal/prompt"
@@ -35,6 +41,10 @@ func main() {
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	log.Printf("[DEBUG] Config loaded: Server=%s:%d, MCP Servers=%d", cfg.Server.Host, cfg.Server.Port, len(cfg.MCP.Servers))
+	for _, s := range cfg.MCP.Servers {
+		log.Printf("[DEBUG] MCP Server: %s (transport=%s, enabled=%v, auto_start=%v)", s.Name, s.Transport, s.Enabled, s.AutoStart)
 	}
 
 	// Initialize database hub
@@ -56,7 +66,11 @@ func main() {
 	guard := security.NewGuard(cfg)
 	auditor := security.NewAuditor("", false, true)
 
-	manager := mcp.NewManager(cfg, guard, auditor)
+	// Initialize metrics collector
+	memory.InitGlobalMetrics("tibrain", "memory")
+
+	// Initialize cognitive memory manager
+	mem := memory.NewCognitiveMemoryManager(hub.DB(), memory.GetGlobalMetrics())
 
 	// Initialize core services with shared DB
 	retrievalRouter := rag.NewRetrievalRouter(hub)
@@ -89,24 +103,48 @@ func main() {
 		}
 	}
 
-	apiServer := NewAPIServer(hub, integrationManager)
+	// Determine allowed roots for filesystem tools
+	allowedRoots := cfg.AllowedRoots
+	if len(allowedRoots) == 0 {
+		// Default to home config and current directory
+		home := getEnvOrDefault("HOME", "")
+		if home == "" {
+			home = getEnvOrDefault("USERPROFILE", "")
+		}
+		if home != "" {
+			allowedRoots = append(allowedRoots, filepath.Join(home, ".config", "tibrain"))
+		}
+		allowedRoots = append(allowedRoots, ".")
+	}
+
+	manager := mcp.NewManager(cfg, guard, auditor, mem, retrievalRouter, allowedRoots)
+
+	apiServer := api.NewAPIServer(hub, integrationManager)
 
 	router := chi.NewRouter()
+
+	// MCP endpoints (must be before catch-all)
+	router.Handle("/mcp/message", http.HandlerFunc(manager.HandleMessage))
+	router.Handle("/mcp", http.HandlerFunc(manager.HandleStreamableHTTP))
+	router.Handle("/mcp/sse", http.HandlerFunc(manager.HandleSSE))
+
+	// Metrics endpoint
+	router.Handle("/metrics", promhttp.Handler())
 
 	// Prompt intelligence API (SPEC.md Phase 4: T-013/T-014/T-015)
 	promptHandler := prompt.NewHTTPHandlerWithDB(hub.DB())
 	promptHandler.RegisterRoutes(router)
 
+	// MCP Management API
+	mgmtHandler := mcp.NewManagementHandler(manager)
+	mgmtHandler.RegisterRoutes(router)
+
 	// Legacy prompt config for Tirouter sync
 	promptAPI := api.NewPromptAPIHandler()
 	router.Handle("/api/v2/runtime/prompts", promptAPI)
 
-	// API Server routes (catch-all for /api/* paths not matched by prompt routes)
-	router.Handle("/*", apiServer)
-
-	// MCP endpoints
-	router.Handle("/mcp", http.HandlerFunc(manager.HandleStreamableHTTP))
-	router.Handle("/mcp/sse", http.HandlerFunc(manager.HandleSSE))
+	// Protocol info
+	router.Handle("/mcp/protocol", http.HandlerFunc(handleProtocolInfo))
 
 	// Health check
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -114,17 +152,117 @@ func main() {
 		w.Write([]byte(`{"status": "ok"}`))
 	})
 
-	// Protocol info
-	router.Handle("/mcp/protocol", http.HandlerFunc(handleProtocolInfo))
+	// Secret vault upsert endpoint for Tirouter JS tooling.
+	// Accepts JSON {provider, key_id, value, source?} and stores encrypted.
+	router.HandleFunc("/v1/secrets/upsert", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeTiBrainRequest(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Provider string `json:"provider"`
+			KeyID    string `json:"key_id"`
+			Value    string `json:"value"`
+			Source   string `json:"source"`
+			KeyType  string `json:"key_type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		provider := strings.TrimSpace(body.Provider)
+		keyID := strings.TrimSpace(body.KeyID)
+		keyType := strings.TrimSpace(body.KeyType)
+		if keyType == "" {
+			keyType = "api-key"
+		}
+		value := body.Value
+		if provider == "" || keyID == "" || value == "" {
+			http.Error(w, "provider, key_id, and value are required", http.StatusBadRequest)
+			return
+		}
+		enc, err := security.EncryptSecret(value)
+		if err != nil {
+			http.Error(w, "encrypt failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := hub.DB().Exec("INSERT OR REPLACE INTO api_secrets (provider, key_id, encrypted_value, key_type, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+			provider, keyID, enc, keyType, body.Source, time.Now().Unix()); err != nil {
+			http.Error(w, "db insert failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"provider": provider,
+			"key_id":   keyID,
+			"value":    value,
+			"source":   body.Source,
+		})
+	})
 
-	port := getEnvOrDefault("PORT", "3005")
-	addr := ":" + port
-	log.Printf("TiBrain starting on %s", addr)
-	log.Printf("Health: http://localhost:%s/health", addr)
-	log.Printf("Prompts: http://localhost:%s/api/v1/prompt/preflight", addr)
-	log.Printf("Prompt config: http://localhost:%s/api/v2/runtime/prompts", addr)
+	// Secret vault resolve endpoint for Tirouter JS tooling.
+	// Accepts JSON {provider, key_id} and returns decrypted value.
+	router.HandleFunc("/v1/secrets/resolve", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeTiBrainRequest(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Provider string `json:"provider"`
+			KeyID    string `json:"key_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		provider := strings.TrimSpace(body.Provider)
+		keyID := strings.TrimSpace(body.KeyID)
+		if provider == "" || keyID == "" {
+			http.Error(w, "provider and key_id are required", http.StatusBadRequest)
+			return
+		}
+		var enc string
+		err := hub.DB().QueryRow("SELECT encrypted_value FROM api_secrets WHERE provider = ? AND key_id = ?", provider, keyID).Scan(&enc)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			if err != nil {
+				http.Error(w, "query failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		value, err := security.DecryptSecret(enc)
+		if err != nil {
+			http.Error(w, "decrypt failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"provider": provider,
+			"key_id":   keyID,
+			"value":    value,
+			"source":   "api_secrets",
+		})
+	})
 
-	if err := http.ListenAndServe(addr, router); err != nil {
+	// API Server routes (catch-all for /api/* paths not matched by prompt routes)
+	router.Handle("/*", apiServer)
+
+	port := getEnvOrDefault("TIBRAIN_PORT", "3005")
+	log.Printf("TiBrain starting on :%s", port)
+	log.Printf("Health: http://localhost:%s/health", port)
+	log.Printf("Prompts: http://localhost:%s/api/v1/prompt/preflight", port)
+	log.Printf("Prompt config: http://localhost:%s/api/v2/runtime/prompts", port)
+
+	if err := http.ListenAndServe(":"+port, router); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
@@ -176,9 +314,12 @@ func runIndexCommand(args []string) {
 		}
 	}
 
-	dataDir := cfg.DataDir
+	dataDir := getEnvOrDefault("TIBRAIN_DATA_DIR", "")
 	if dataDir == "" {
-		dataDir = getEnvOrDefault("TIBRAIN_DATA_DIR", `Z:\03_DATA\tibrain-database`)
+		dataDir = cfg.DataDir
+	}
+	if dataDir == "" {
+		dataDir = `Z:\03_DATA\tibrain-database`
 	}
 	hub, err := db.NewHub(dataDir)
 	if err != nil {
@@ -230,4 +371,19 @@ func (m *multiFlag) Set(v string) error {
 	}
 	*m = append(*m, abs)
 	return nil
+}
+
+func authorizeTiBrainRequest(w http.ResponseWriter, r *http.Request) bool {
+	bearer := r.Header.Get("Authorization")
+	if bearer == "" {
+		http.Error(w, "missing bearer token", http.StatusUnauthorized)
+		return false
+	}
+	token := strings.TrimPrefix(bearer, "Bearer ")
+	expected := getEnvOrDefault("TIBRAIN_MCP_BEARER_TOKEN", "")
+	if expected == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
+		http.Error(w, "invalid bearer token", http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
