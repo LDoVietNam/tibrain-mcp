@@ -14,27 +14,27 @@ import (
 const defaultConfigDir = "data"
 
 type memoryEntry struct {
-	Domain      string   `json:"domain" yaml:"-"`
-	Name        string   `yaml:"name"`
-	Confidence  float64  `yaml:"confidence"`
-	Verified    bool     `yaml:"verified"`
-	Entries     []string `yaml:"entries"`
+	Domain     string   `json:"domain" yaml:"-"`
+	Name       string   `yaml:"name"`
+	Confidence float64  `yaml:"confidence"`
+	Verified   bool     `yaml:"verified"`
+	Entries    []string `yaml:"entries"`
 }
 
 type memoryIndex struct {
-	Version  string         `yaml:"version"`
-	Domains  []memoryEntry  `yaml:"domains"`
+	Version   string        `yaml:"version"`
+	Domains   []memoryEntry `yaml:"domains"`
 	Retrieval struct {
-		DefaultLimit       int     `yaml:"default_limit"`
+		DefaultLimit        int     `yaml:"default_limit"`
 		ConfidenceThreshold float64 `yaml:"confidence_threshold"`
 	} `yaml:"retrieval"`
 }
 
 type searchParams struct {
-	Query       string   `yaml:"query"`
+	Query         string  `yaml:"query"`
 	MinConfidence float64 `yaml:"min_confidence,omitempty"`
-	Domain      string   `yaml:"domain,omitempty"`
-	Limit       int      `yaml:"limit,omitempty"`
+	Domain        string  `yaml:"domain,omitempty"`
+	Limit         int     `yaml:"limit,omitempty"`
 }
 
 var memoryIndexPath = filepath.Join(defaultConfigDir, "memory_index.yaml")
@@ -108,25 +108,25 @@ func (m *Manager) handleMemorySearch(ctx context.Context, req mcp.CallToolReques
 		limit = 10
 	}
 
-		results, err := searchMemory(searchParams{
-			Query:       query,
-			MinConfidence: minConf,
-			Domain:      domain,
-			Limit:       limit,
-		})
-		if err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
-		}
+	results, err := searchMemory(searchParams{
+		Query:         query,
+		MinConfidence: minConf,
+		Domain:        domain,
+		Limit:         limit,
+	})
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
 
-		if len(results) == 0 {
-			return mcp.NewToolResultText("No memory entries found matching query."), nil
-		}
+	if len(results) == 0 {
+		return mcp.NewToolResultText("No memory entries found matching query."), nil
+	}
 
-		output := fmt.Sprintf("Found %d entries:\n\n", len(results))
-		for i, r := range results {
-			output += fmt.Sprintf("%d. %s\n", i+1, r)
-		}
-		return mcp.NewToolResultText(strings.TrimSpace(output)), nil
+	output := fmt.Sprintf("Found %d entries:\n\n", len(results))
+	for i, r := range results {
+		output += fmt.Sprintf("%d. %s\n", i+1, r)
+	}
+	return mcp.NewToolResultText(strings.TrimSpace(output)), nil
 }
 
 func (m *Manager) handleMemoryListDomains(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

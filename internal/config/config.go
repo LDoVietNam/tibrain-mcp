@@ -149,10 +149,10 @@ func Default() *Config {
 		},
 		Permissions: PermissionsConfig{ActiveProfile: ProfileOperator},
 		RAG: RAGConfig{
-			QueryCacheTTL:      5 * time.Minute,
-			QueryCacheBurst:    64,
+			QueryCacheTTL:   5 * time.Minute,
+			QueryCacheBurst: 64,
 		},
-		Audit:       AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
+		Audit: AuditConfig{Enabled: true, Path: ".runtime/logs/audit.jsonl", RedactSecrets: true},
 		// Legacy TiBrain defaults
 		CLIRegistry:    "",
 		HandoffTrack:   "",
