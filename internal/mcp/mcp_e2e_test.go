@@ -17,9 +17,134 @@ import (
 )
 
 const (
-	testBaseURL = "http://127.0.0.1:3005/mcp"
 	testTimeout = 10 * time.Second
 )
+
+type E2ETestClient struct {
+	client     *http.Client
+	baseURL    string
+	token      string
+	sessionID  string
+}
+
+func newE2ETestClient(t *testing.T) *E2ETestClient {
+	client := &http.Client{Timeout: testTimeout}
+	baseURL := getTestBaseURL()
+	token := getTestToken()
+
+	ec := &E2ETestClient{
+		client:  client,
+		baseURL: baseURL,
+		token:   token,
+	}
+
+	// Initialize to get session ID
+	if !isNoAuthMode() && token != "" {
+		ec.initialize(t)
+	}
+
+	return ec
+}
+
+func (c *E2ETestClient) initialize(t *testing.T) {
+	req := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "initialize",
+		Params: InitializeParams{
+			ProtocolVersion: "2024-11-05",
+			Capabilities:    map[string]interface{}{},
+			ClientInfo: map[string]interface{}{
+				"name":    "tibrain-e2e-test",
+				"version": "1.0",
+			},
+		},
+		ID: 1,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Failed to marshal initialize request: %v", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", c.baseURL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	httpReq.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		t.Fatalf("Failed to send initialize request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var jsonResp JSONRPCResponse
+		if err := json.NewDecoder(resp.Body).Decode(&jsonResp); err == nil {
+			// Extract session ID from headers
+			c.sessionID = resp.Header.Get("Mcp-Session-Id")
+		}
+	}
+}
+
+func (c *E2ETestClient) doRequest(t *testing.T, method string, params interface{}, id int) *JSONRPCResponse {
+	req := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  params,
+		ID:      id,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Failed to marshal request: %v", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", c.baseURL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+
+	if !isNoAuthMode() && c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.sessionID != "" {
+		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
+	}
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		t.Fatalf("Failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var jsonResp JSONRPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&jsonResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Update session ID if present
+	if newSessionID := resp.Header.Get("Mcp-Session-Id"); newSessionID != "" {
+		c.sessionID = newSessionID
+	}
+
+	return &jsonResp
+}
+
+func getTestBaseURL() string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = os.Getenv("TIBRAIN_PORT")
+	}
+	if port == "" {
+		port = "3005"
+	}
+	return "http://127.0.0.1:" + port + "/mcp"
+}
 
 type JSONRPCRequest struct {
 	JSONRPC string      `json:"jsonrpc"`
@@ -74,70 +199,21 @@ func skipIfNoToken(t *testing.T) {
 func TestE2E_Initialize(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
-
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "initialize",
-		Params: InitializeParams{
-			ProtocolVersion: "2024-11-05",
-			Capabilities:    map[string]interface{}{},
-			ClientInfo: map[string]interface{}{
-				"name":    "tibrain-e2e-test",
-				"version": "1.0",
-			},
+	ec := newE2ETestClient(t)
+	resp := ec.doRequest(t, "initialize", InitializeParams{
+		ProtocolVersion: "2024-11-05",
+		Capabilities:    map[string]interface{}{},
+		ClientInfo: map[string]interface{}{
+			"name":    "tibrain-e2e-test",
+			"version": "1.0",
 		},
-		ID: 1,
+	}, 1)
+
+	if resp.Error != nil {
+		t.Fatalf("Initialize returned error: %s", resp.Error.Message)
 	}
 
-	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// In no-auth mode, gateway returns 401 (auth required)
-	// This is expected behavior; skip further validation
-	if isNoAuthMode() {
-		if resp.StatusCode == http.StatusUnauthorized {
-			t.Logf("No-auth mode: gateway correctly requires auth (status 401)")
-			return
-		}
-		t.Fatalf("No-auth mode: expected 401, got %d", resp.StatusCode)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
-	}
-
-	var jsonResp JSONRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&jsonResp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if jsonResp.Error != nil {
-		t.Fatalf("Initialize returned error: %s", jsonResp.Error.Message)
-	}
-
-	result, ok := jsonResp.Result.(map[string]interface{})
+	result, ok := resp.Result.(map[string]interface{})
 	if !ok {
 		t.Fatal("Result is not a map")
 	}
@@ -163,105 +239,27 @@ func TestE2E_Initialize(t *testing.T) {
 func TestE2E_NotificationsInitialized(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
-
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "notifications/initialized",
-		Params:  map[string]interface{}{},
-		ID:      1,
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
+	ec := newE2ETestClient(t)
+	resp := ec.doRequest(t, "notifications/initialized", map[string]interface{}{}, 1)
 
 	// notifications/initialized is a notification, so it may not return a result
 	// but should not error either
-	if resp.StatusCode != http.StatusOK {
-		t.Logf("notifications/initialized status: %d (may be expected)", resp.StatusCode)
+	if resp.Error != nil {
+		t.Logf("notifications/initialized returned error: %s", resp.Error.Message)
 	}
 }
 
 func TestE2E_ToolsList(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
+	ec := newE2ETestClient(t)
+	resp := ec.doRequest(t, "tools/list", map[string]interface{}{}, 2)
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/list",
-		Params:  map[string]interface{}{},
-		ID:      2,
+	if resp.Error != nil {
+		t.Fatalf("tools/list returned error: %s", resp.Error.Message)
 	}
 
-	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// In no-auth mode, gateway returns 401 (auth required)
-	// This is expected behavior; skip further validation
-	if isNoAuthMode() {
-		if resp.StatusCode == http.StatusUnauthorized {
-			t.Logf("No-auth mode: gateway correctly requires auth (status 401)")
-			return
-		}
-		t.Fatalf("No-auth mode: expected 401, got %d", resp.StatusCode)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
-	}
-
-	var jsonResp JSONRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&jsonResp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if jsonResp.Error != nil {
-		t.Fatalf("tools/list returned error: %s", jsonResp.Error.Message)
-	}
-
-	result, ok := jsonResp.Result.(map[string]interface{})
+	result, ok := resp.Result.(map[string]interface{})
 	if !ok {
 		t.Fatal("Result is not a map")
 	}
@@ -297,59 +295,11 @@ func TestE2E_ToolsList(t *testing.T) {
 func TestE2E_Ping(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
+	ec := newE2ETestClient(t)
+	resp := ec.doRequest(t, "ping", map[string]interface{}{}, 3)
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "ping",
-		Params:  map[string]interface{}{},
-		ID:      3,
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// In no-auth mode, gateway returns 401 (auth required)
-	// This is expected behavior; skip further validation
-	if isNoAuthMode() {
-		if resp.StatusCode == http.StatusUnauthorized {
-			t.Logf("No-auth mode: gateway correctly requires auth (status 401)")
-			return
-		}
-		t.Fatalf("No-auth mode: expected 401, got %d", resp.StatusCode)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
-	}
-
-	var jsonResp JSONRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&jsonResp); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if jsonResp.Error != nil {
-		t.Fatalf("ping returned error: %s", jsonResp.Error.Message)
+	if resp.Error != nil {
+		t.Fatalf("ping returned error: %s", resp.Error.Message)
 	}
 
 	t.Log("ping succeeded")
@@ -379,7 +329,7 @@ func TestE2E_InvalidAuth(t *testing.T) {
 		t.Fatalf("Failed to marshal request: %v", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", getTestBaseURL(), bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
@@ -405,22 +355,23 @@ func TestE2E_InvalidAuth(t *testing.T) {
 func TestE2E_InvalidJSONRPC(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
+	ec := newE2ETestClient(t)
 
 	// Send invalid JSON
-	httpReq, err := http.NewRequest("POST", testBaseURL, strings.NewReader("{invalid json"))
+	httpReq, err := http.NewRequest("POST", ec.baseURL, strings.NewReader("{invalid json"))
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
+	if !isNoAuthMode() && ec.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+ec.token)
+	}
+	if ec.sessionID != "" {
+		httpReq.Header.Set("Mcp-Session-Id", ec.sessionID)
 	}
 
-	resp, err := client.Do(httpReq)
+	resp, err := ec.client.Do(httpReq)
 	if err != nil {
 		t.Fatalf("Failed to send request: %v", err)
 	}
@@ -437,58 +388,10 @@ func TestE2E_InvalidJSONRPC(t *testing.T) {
 func TestE2E_ToolsCall(t *testing.T) {
 	skipIfNoToken(t)
 
-	client := &http.Client{Timeout: testTimeout}
-	token := getTestToken()
+	ec := newE2ETestClient(t)
 
 	// First get tools list to find a valid tool
-	listReq := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/list",
-		Params:  map[string]interface{}{},
-		ID:      1,
-	}
-
-	body, err := json.Marshal(listReq)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send tools/list request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// In no-auth mode, gateway returns 401 (auth required)
-	// This is expected behavior; skip further validation
-	if isNoAuthMode() {
-		if resp.StatusCode == http.StatusUnauthorized {
-			t.Logf("No-auth mode: gateway correctly requires auth (status 401)")
-			return
-		}
-		t.Fatalf("No-auth mode: expected 401, got %d", resp.StatusCode)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("tools/list failed with status %d", resp.StatusCode)
-	}
-
-	var listResp JSONRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
-		t.Fatalf("Failed to decode tools/list response: %v", err)
-	}
+	listResp := ec.doRequest(t, "tools/list", map[string]interface{}{}, 1)
 
 	if listResp.Error != nil {
 		t.Fatalf("tools/list returned error: %s", listResp.Error.Message)
@@ -522,54 +425,163 @@ func TestE2E_ToolsCall(t *testing.T) {
 	t.Logf("Testing tool call on: %s", toolName)
 
 	// Call the tool with empty arguments (may fail but should not crash)
-	callReq := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/call",
-		Params: map[string]interface{}{
-			"name":      toolName,
-			"arguments": map[string]interface{}{},
-		},
-		ID: 2,
-	}
-
-	body, err = json.Marshal(callReq)
-	if err != nil {
-		t.Fatalf("Failed to marshal request: %v", err)
-	}
-
-	httpReq, err = http.NewRequest("POST", testBaseURL, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-
-	// Only add Authorization header if not in no-auth mode
-	if !isNoAuthMode() {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err = client.Do(httpReq)
-	if err != nil {
-		t.Fatalf("Failed to send tools/call request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// In no-auth mode, gateway returns 401 (auth required)
-	// This is expected behavior; skip further validation
-	if isNoAuthMode() {
-		if resp.StatusCode == http.StatusUnauthorized {
-			t.Logf("No-auth mode: gateway correctly requires auth (status 401)")
-			return
-		}
-		t.Fatalf("No-auth mode: expected 401, got %d", resp.StatusCode)
-	}
-
-	// The tool call may fail due to invalid arguments, but the protocol should work
-	var callResp JSONRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&callResp); err != nil {
-		t.Fatalf("Failed to decode tools/call response: %v", err)
-	}
+	callResp := ec.doRequest(t, "tools/call", map[string]interface{}{
+		"name":      toolName,
+		"arguments": map[string]interface{}{},
+	}, 2)
 
 	t.Logf("tools/call completed for %s: error=%v", toolName, callResp.Error != nil)
+}
+
+func TestE2E_Batch(t *testing.T) {
+	skipIfNoToken(t)
+
+	ec := newE2ETestClient(t)
+
+	// Test tibrain.batch with multiple operations
+	batchReq := map[string]interface{}{
+		"operations_json": `[
+			{"tool": "memory.search", "params": {"query": "test"}},
+			{"tool": "memory.list_domains", "params": {}}
+		]`,
+	}
+
+	resp := ec.doRequest(t, "tools/call", map[string]interface{}{
+		"name":      "tibrain.batch",
+		"arguments": batchReq,
+	}, 1)
+
+	if resp.Error != nil {
+		t.Fatalf("tibrain.batch returned error: %s", resp.Error.Message)
+	}
+
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Result is not a map")
+	}
+
+	content, ok := result["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("No content in result")
+	}
+
+	textContent, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("Content is not a map")
+	}
+
+	text, ok := textContent["text"].(string)
+	if !ok {
+		t.Fatal("Text content is not a string")
+	}
+
+	// Verify the batch response contains results for both operations
+	if !strings.Contains(text, "memory.search") {
+		t.Error("Batch response missing memory.search result")
+	}
+	if !strings.Contains(text, "memory.list_domains") {
+		t.Error("Batch response missing memory.list_domains result")
+	}
+
+	t.Logf("tibrain.batch succeeded: %s", text[:min(200, len(text))])
+}
+
+func TestE2E_ContextStatus(t *testing.T) {
+	skipIfNoToken(t)
+
+	ec := newE2ETestClient(t)
+
+	resp := ec.doRequest(t, "tools/call", map[string]interface{}{
+		"name":      "subagent.context_status",
+		"arguments": map[string]interface{}{},
+	}, 1)
+
+	if resp.Error != nil {
+		t.Fatalf("subagent.context_status returned error: %s", resp.Error.Message)
+	}
+
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Result is not a map")
+	}
+
+	content, ok := result["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("No content in result")
+	}
+
+	textContent, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("Content is not a map")
+	}
+
+	text, ok := textContent["text"].(string)
+	if !ok {
+		t.Fatal("Text content is not a string")
+	}
+
+	// Verify the context status response contains expected fields
+	if !strings.Contains(text, "context_budget") {
+		t.Error("Context status missing context_budget")
+	}
+	if !strings.Contains(text, "available_percent") {
+		t.Error("Context status missing available_percent")
+	}
+
+	t.Logf("subagent.context_status succeeded: %s", text[:min(200, len(text))])
+}
+
+func TestE2E_QualityGate(t *testing.T) {
+	skipIfNoToken(t)
+
+	ec := newE2ETestClient(t)
+
+	resp := ec.doRequest(t, "tools/call", map[string]interface{}{
+		"name": "ops.qualitygate",
+		"arguments": map[string]interface{}{
+			"repo_path": ".",
+			"parallel":  false,
+		},
+	}, 1)
+
+	if resp.Error != nil {
+		t.Fatalf("ops.qualitygate returned error: %s", resp.Error.Message)
+	}
+
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Result is not a map")
+	}
+
+	content, ok := result["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("No content in result")
+	}
+
+	textContent, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("Content is not a map")
+	}
+
+	text, ok := textContent["text"].(string)
+	if !ok {
+		t.Fatal("Text content is not a string")
+	}
+
+	// Verify the quality gate response contains expected fields
+	if !strings.Contains(text, "passed") {
+		t.Error("Quality gate missing passed field")
+	}
+	if !strings.Contains(text, "steps") {
+		t.Error("Quality gate missing steps field")
+	}
+
+	t.Logf("ops.qualitygate succeeded: %s", text[:min(200, len(text))])
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

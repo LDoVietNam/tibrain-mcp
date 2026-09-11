@@ -173,14 +173,14 @@ func Load(path string) (*Config, error) {
 			}
 		}
 	}
-	cfg.applyEnv()
+	cfg.ApplyEnv()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) applyEnv() {
+func (c *Config) ApplyEnv() {
 	if v := strings.TrimSpace(os.Getenv("TIBRAIN_HOST")); v != "" {
 		c.Server.Host = v
 	}

@@ -43,6 +43,7 @@ type Manager struct {
 	lazyPool         *LazyPool
 	presets          *presets.Registry
 	templates        *templates.Registry
+	auth             *security.Authenticator
 
 	opsQG      qualitygate.QualityGate
 	opsAudit   audit.Audit
@@ -72,6 +73,12 @@ func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Aud
 			server.WithRecovery(),
 		),
 	}
+	// Build authenticator from config
+	m.auth = security.NewAuthenticator(
+		cfg.BearerToken(),
+		cfg.Auth.AllowedOrigins,
+		cfg.Auth.RateLimitPerMinute,
+	)
 	m.stream = server.NewStreamableHTTPServer(m.srv,
 		streamableHTTPOptions(cfg.MCP.StreamableHTTPPath)...,
 	)
@@ -209,18 +216,30 @@ func (m *Manager) syncMCPToolsToRegistry(ctx context.Context) {
 	log.Printf("[MCP] Tool sync complete. Total tools in registry: %d", len(m.registry.List()))
 }
 
-// HandleStreamableHTTP serves the canonical /mcp endpoint.
+// HandleStreamableHTTP serves the canonical /mcp endpoint with authentication.
 func (m *Manager) HandleStreamableHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.auth != nil {
+		m.auth.Wrap(m.stream.ServeHTTP)(w, r)
+		return
+	}
 	m.stream.ServeHTTP(w, r)
 }
 
-// HandleSSE serves the legacy /mcp/sse endpoint.
+// HandleSSE serves the legacy /mcp/sse endpoint with authentication.
 func (m *Manager) HandleSSE(w http.ResponseWriter, r *http.Request) {
+	if m.auth != nil {
+		m.auth.Wrap(m.sse.ServeHTTP)(w, r)
+		return
+	}
 	m.sse.ServeHTTP(w, r)
 }
 
-// HandleMessage serves legacy /mcp/message POST for SSE clients.
+// HandleMessage serves legacy /mcp/message POST for SSE clients with authentication.
 func (m *Manager) HandleMessage(w http.ResponseWriter, r *http.Request) {
+	if m.auth != nil {
+		m.auth.Wrap(m.sse.ServeHTTP)(w, r)
+		return
+	}
 	m.sse.ServeHTTP(w, r)
 }
 

@@ -2,6 +2,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -21,7 +23,30 @@ import (
 )
 
 func main() {
+	// Parse CLI flags
+	portFlag := flag.String("port", "", "Server port (overrides PORT/TIBRAIN_PORT env var)")
+	hostFlag := flag.String("host", "", "Server host (overrides TIBRAIN_HOST env var)")
+	flag.Parse()
+
 	cfg := config.Default()
+	cfg.ApplyEnv()
+
+	// Override config with CLI flags if provided
+	if *portFlag != "" {
+		if p, err := parsePort(*portFlag); err == nil {
+			cfg.Server.Port = p
+		}
+	}
+	if *hostFlag != "" {
+		cfg.Server.Host = *hostFlag
+	}
+
+	// Also respect PORT env var (for compatibility with existing scripts)
+	if portEnv := os.Getenv("PORT"); portEnv != "" {
+		if p, err := parsePort(portEnv); err == nil {
+			cfg.Server.Port = p
+		}
+	}
 
 	// Initialize database hub
 	dataDir := getEnvOrDefault("TIBRAIN_DATA_DIR", "Z:\\03_DATA\\tibrain-database")
@@ -77,12 +102,11 @@ func main() {
 	// Protocol info
 	router.Handle("/mcp/protocol", http.HandlerFunc(handleProtocolInfo))
 
-	port := getEnvOrDefault("PORT", "3005")
-	addr := ":" + port
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("TiBrain starting on %s", addr)
-	log.Printf("Health: http://localhost:%s/health", addr)
-	log.Printf("Prompts: http://localhost:%s/api/v1/prompt/preflight", addr)
-	log.Printf("Prompt config: http://localhost:%s/api/v2/runtime/prompts", addr)
+	log.Printf("Health: http://localhost:%d/health", cfg.Server.Port)
+	log.Printf("Prompts: http://localhost:%d/api/v1/prompt/preflight", cfg.Server.Port)
+	log.Printf("Prompt config: http://localhost:%d/api/v2/runtime/prompts", cfg.Server.Port)
 
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed: %v", err)
@@ -94,4 +118,10 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+func parsePort(s string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(s, "%d", &n)
+	return n, err
 }
