@@ -447,8 +447,7 @@ func (m *Manager) registerAllTools() {
 	m.addTool("tibrain.batch", "Batch multiple read-only MCP tool calls into a single request, executing them in parallel. Read-only.", security.CatRead,
 		mcp.NewTool("tibrain.batch",
 			mcp.WithDescription("Batch multiple read-only MCP tool calls into a single request for parallel execution, reducing latency."),
-			mcp.WithArray("operations", mcp.Required(), mcp.Description("List of tool operations to execute in parallel"),
-				mcp.WithObjectItems()),
+			mcp.WithString("operations_json", mcp.Required(), mcp.Description("JSON array of {tool, params} operations")),
 		), m.handleBatch)
 
 	m.addTool("subagent.context_status", "Check subagent context budget. Read-only.", security.CatRead,

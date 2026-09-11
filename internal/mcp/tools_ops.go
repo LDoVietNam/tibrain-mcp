@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/ti/router/tibrain/internal/qualitygate"
 	"github.com/ti/router/tibrain/internal/tracker"
 )
 
@@ -15,7 +16,7 @@ func (m *Manager) handleOpsQualityGate(ctx context.Context, req mcp.CallToolRequ
 	repo := req.GetString("repo_path", ".")
 	parallel := req.GetBool("parallel", false)
 
-	var report *Report
+	var report *qualitygate.Report
 	var err error
 	if parallel {
 		report, err = m.opsQG.RunParallel(ctx, repo)
@@ -79,9 +80,17 @@ func (m *Manager) handleOpsRecentHandoffs(ctx context.Context, req mcp.CallToolR
 // their results into a single response. This implements the MCP Tool Batching
 // optimization (P0) - reducing latency by collapsing multiple round-trips.
 func (m *Manager) handleBatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	operations := req.GetSlice("operations")
+	opsJSON := req.GetString("operations_json", "")
+	if opsJSON == "" {
+		return mcp.NewToolResultError("operations_json is required"), nil
+	}
+
+	var operations []map[string]any
+	if err := json.Unmarshal([]byte(opsJSON), &operations); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("operations_json parse error: %v", err)), nil
+	}
 	if len(operations) == 0 {
-		return mcp.NewToolResultError("operations is required and must have at least 1 entry"), nil
+		return mcp.NewToolResultError("operations_json must have at least 1 entry"), nil
 	}
 
 	type batchResult struct {
