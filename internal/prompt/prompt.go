@@ -3,6 +3,8 @@ package prompt
 import (
 	"context"
 	"strings"
+
+	"github.com/ti/router/tibrain/internal/ports"
 )
 
 // CapsuleStatus represents the lifecycle state of a prompt capsule.
@@ -46,10 +48,14 @@ type Repository interface {
 	GetVersion(ctx context.Context, capsuleID, version string) (*PromptVersion, error)
 	GetVersions(ctx context.Context, capsuleID string) ([]PromptVersion, error)
 	GetLatestVersion(ctx context.Context, capsuleID string) (*PromptVersion, error)
+	FindVersionByHash(ctx context.Context, contentHash string) (*PromptVersion, error)
 
 	CreateTrace(ctx context.Context, t PromptTrace) error
 	CreateFeedback(ctx context.Context, f PromptFeedback) error
 	CreateEvaluation(ctx context.Context, e PromptEvaluation) error
+
+	Preflight(ctx context.Context, intent, domain string) (*ports.PromptEnvelope, error)
+	PreflightWithVersions(ctx context.Context, intent, domain string, maxCapsules int, opts FilterOptions) ([]*PromptCapsule, error)
 }
 
 // CapsuleEnvelope is the HTTP-facing representation of a capsule.

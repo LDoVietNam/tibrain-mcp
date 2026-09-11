@@ -188,6 +188,20 @@ func (r *sqliteRepository) GetLatestVersion(ctx context.Context, capsuleID strin
 	return r.GetVersion(ctx, capsuleID, "")
 }
 
+func (r *sqliteRepository) FindVersionByHash(ctx context.Context, contentHash string) (*PromptVersion, error) {
+	var v PromptVersion
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, version, content, content_hash, token_estimate, placement, created_at FROM prompt_capsule_versions WHERE content_hash = ? ORDER BY created_at DESC LIMIT 1`,
+		contentHash).Scan(&v.ID, &v.Version, &v.Content, &v.ContentHash, &v.TokenEstimate, &v.Placement, &v.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrVersionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find version by hash: %w", err)
+	}
+	return &v, nil
+}
+
 func (r *sqliteRepository) CreateTrace(ctx context.Context, t PromptTrace) error {
 	if t.ID == "" {
 		t.ID = uuid.NewString()
@@ -276,6 +290,24 @@ func (r *sqliteRepository) Preflight(ctx context.Context, intent, domain string)
 		Domain: capsules[0].Domain,
 		Intent: splitIntent(capsules[0].Intent),
 	}, nil
+}
+
+// PreflightWithVersions performs preflight with version info for token budget.
+func (r *sqliteRepository) PreflightWithVersions(ctx context.Context, intent, domain string, maxCapsules int, opts FilterOptions) ([]*PromptCapsule, error) {
+	capsules, err := r.ListCapsules(ctx, intent, domain, CapsuleStatusActive, maxCapsules)
+	if err != nil {
+		return nil, err
+	}
+
+	versions := make(map[string]*PromptVersion)
+	for _, c := range capsules {
+		v, err := r.GetLatestVersion(ctx, c.ID)
+		if err == nil && v != nil {
+			versions[c.ID] = v
+		}
+	}
+
+	return FilterWithVersions(ctx, capsules, versions, opts)
 }
 
 // RecordFeedback implements ports.PromptPort.
