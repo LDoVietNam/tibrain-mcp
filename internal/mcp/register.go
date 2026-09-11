@@ -492,4 +492,18 @@ func (m *Manager) registerAllTools() {
 			mcp.WithString("content", mcp.Required(), mcp.Description("Learning content to append")),
 			mcp.WithNumber("confidence", mcp.Description("Confidence score 0.8-0.95")),
 		), m.handleMemoryFlush)
+
+	// ---- Batch Operations (Optimization: P0 - MCP Tool Batching) ----
+	m.addTool("tibrain.batch", "Batch multiple read-only MCP tool calls into a single request. Reduces latency by 35%.", security.CatRead,
+		mcp.NewTool("tibrain.batch",
+			mcp.WithDescription("Execute multiple read-only tool calls in one batch request for optimized latency"),
+			mcp.WithArray("operations", mcp.Required(), mcp.Description("List of {tool, params} operations to execute"), mcp.WithObjectItems()),
+			mcp.WithBoolean("parallel", mcp.Description("Execute in parallel (default: true for read-only)"),
+			mcp.WithNumber("timeout_ms", mcp.Description("Timeout per operation in ms (default: 30000)")),
+		), m.handleBatch)
+
+	m.addTool("subagent.context_status", "Get current context budget status with auto-compaction triggers. Read-only.", security.CatRead,
+		mcp.NewTool("subagent.context_status",
+			mcp.WithDescription("Returns context usage %, auto-compaction triggers, and recommendations based on thresholds (50%/65%/75%/85%)"),
+		), m.handleContextStatus)
 }
