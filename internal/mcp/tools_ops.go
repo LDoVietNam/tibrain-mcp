@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/ti/router/tibrain/internal/qualitygate"
 	"github.com/ti/router/tibrain/internal/tracker"
@@ -104,11 +105,7 @@ func (m *Manager) handleBatch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	var wg sync.WaitGroup
 
 	for i, op := range operations {
-		opMap, ok := op.(map[string]any)
-		if !ok {
-			results[i] = batchResult{index: i, err: fmt.Errorf("operation %d: invalid format", i)}
-			continue
-		}
+		opMap := op
 
 		toolName, _ := opMap["tool"].(string)
 		params, _ := opMap["params"].(map[string]any)
@@ -124,10 +121,10 @@ func (m *Manager) handleBatch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	wg.Wait()
 
 	type item struct {
-		Tool    string `json:"tool"`
-		Status  string `json:"status"`
-		Result  string `json:"result,omitempty"`
-		Error   string `json:"error,omitempty"`
+		Tool   string `json:"tool"`
+		Status string `json:"status"`
+		Result string `json:"result,omitempty"`
+		Error  string `json:"error,omitempty"`
 	}
 
 	var output []item
@@ -151,7 +148,7 @@ func (m *Manager) handleBatch(ctx context.Context, req mcp.CallToolRequest) (*mc
 // This avoids the full MCP protocol round-trip by dispatching directly through
 // the internal tool registry.
 func (m *Manager) dispatchInnerTool(ctx context.Context, toolName string, params map[string]any) (string, error) {
-	rec, ok := m.registry.Lookup(toolName)
+	rec, ok := m.registry.Get(toolName)
 	if !ok {
 		return "", fmt.Errorf("tool '%s' not found", toolName)
 	}
@@ -163,7 +160,11 @@ func (m *Manager) dispatchInnerTool(ctx context.Context, toolName string, params
 		_ = json.Unmarshal(b, &req.Params)
 	}
 
-	result, err := rec.Handler(ctx, req)
+	handler, ok := rec.Handler.(server.ToolHandlerFunc)
+	if !ok {
+		return "", fmt.Errorf("tool '%s' has invalid handler type", toolName)
+	}
+	result, err := handler(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -171,8 +172,8 @@ func (m *Manager) dispatchInnerTool(ctx context.Context, toolName string, params
 	// Extract text from result
 	var texts []string
 	for _, c := range result.Content {
-		if c.Type == "text" {
-			texts = append(texts, c.Text)
+		if tc, ok := c.(mcp.TextContent); ok {
+			texts = append(texts, tc.Text)
 		}
 	}
 	if len(texts) == 0 {
@@ -188,9 +189,9 @@ func (m *Manager) handleContextStatus(ctx context.Context, req mcp.CallToolReque
 	sessionID := req.GetString("session_id", "current")
 
 	status := map[string]any{
-		"session_id":      sessionID,
-		"context_budget":  map[string]any{
-			"used_percent":      0,   // Placeholder - real implementation would query actual context
+		"session_id": sessionID,
+		"context_budget": map[string]any{
+			"used_percent":      0, // Placeholder - real implementation would query actual context
 			"available_percent": 100,
 			"warn_at":           50,
 			"critical_at":       65,
