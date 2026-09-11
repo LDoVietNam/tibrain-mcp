@@ -1,0 +1,132 @@
+# Docs RAG - Documentation RAG Indexing Workflow
+# Triggered on changes to docs/ folder to rebuild vector embeddings for RAG search
+
+name: Docs RAG Indexing
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'scripts/build_rag_index.go'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild of RAG index'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  GO_VERSION: '1.25'
+  RAG_INDEX_PATH: 'docs/vector_index.faiss'
+  RAG_METADATA_PATH: 'docs/rag_metadata.json'
+  CHUNK_SIZE: '500'
+  CHUNK_OVERLAP: '50'
+  EMBEDDING_MODEL: 'sentence-transformers/all-MiniLM-L6-v2'
+
+jobs:
+  build-rag-index:
+    name: Build RAG Index
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build RAG index builder
+        run: go build -o build_rag_index scripts/build_rag_index.go
+
+      - name: Run RAG indexing
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+        run: |
+          ./build_rag_index \
+            --source-dir=docs \
+            --index-path=${{ env.RAG_INDEX_PATH }} \
+            --metadata-path=${{ env.RAG_METADATA_PATH }} \
+            --chunk-size=${{ env.CHUNK_SIZE }} \
+            --chunk-overlap=${{ env.CHUNK_OVERLAP }} \
+            --model=${{ env.EMBEDDING_MODEL }} \
+            --force=${{ env.FORCE_REBUILD }}
+
+      - name: Verify index created
+        run: |
+          if [ ! -f "${{ env.RAG_INDEX_PATH }}" ]; then
+            echo "::error::RAG index not created at ${{ env.RAG_INDEX_PATH }}"
+            exit 1
+          fi
+          if [ ! -f "${{ env.RAG_METADATA_PATH }}" ]; then
+            echo "::error::RAG metadata not created at ${{ env.RAG_METADATA_PATH }}"
+            exit 1
+          fi
+          ls -la ${{ env.RAG_INDEX_PATH }} ${{ env.RAG_METADATA_PATH }}
+
+      - name: Commit updated index
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ${{ env.RAG_INDEX_PATH }} ${{ env.RAG_METADATA_PATH }}
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore(rag): update vector index and metadata [skip ci]"
+            git push
+          fi
+
+      - name: Upload index as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-index
+          path: |
+            ${{ env.RAG_INDEX_PATH }}
+            ${{ env.RAG_METADATA_PATH }}
+          retention-days: 7
+
+  query-rag:
+    name: Test RAG Query
+    runs-on: ubuntu-latest
+    needs: build-rag-index
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build RAG query tool
+        run: go build -o query_rag scripts/query_rag.go
+
+      - name: Test query
+        run: |
+          ./query_rag \
+            --index-path=${{ env.RAG_INDEX_PATH }} \
+            --metadata-path=${{ env.RAG_METADATA_PATH }} \
+            --query="How does Tibrain handle MCP tool registration?" \
+            --top-k=5
+        continue-on-error: true

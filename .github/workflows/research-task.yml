@@ -1,0 +1,175 @@
+# Research Task - On-demand research workflow for GitHub-based knowledge discovery
+# Triggered manually to perform research tasks and store results in memory
+
+name: Research Task
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'Research query or topic to investigate'
+        type: string
+        required: true
+      max_results:
+        description: 'Maximum number of results to return'
+        type: string
+        default: '10'
+      search_scope:
+        description: 'Scope of search'
+        type: choice
+        options:
+          - 'this_repo'
+          - 'org_repos'
+          - 'github_code'
+        default: 'this_repo'
+      output_tier:
+        description: 'Memory tier to store results'
+        type: choice
+        options:
+          - 'core'
+          - 'archival'
+          - 'recall'
+        default: 'core'
+      tags:
+        description: 'Comma-separated tags for categorization'
+        type: string
+        default: 'research'
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  GO_VERSION: '1.25'
+  MEMORY_REPO: 'tibrain-memory-sync'
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  research:
+    name: Execute Research Task
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: tibrain
+
+      - name: Checkout memory sync repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ env.MEMORY_REPO }}
+          path: memory-sync
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+
+      - name: Authenticate GitHub CLI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Build research tool
+        working-directory: ./tibrain
+        run: go build -o research_tool scripts/research_task.go
+
+      - name: Execute research
+        working-directory: ./tibrain
+        env:
+          QUERY: ${{ inputs.query }}
+          MAX_RESULTS: ${{ inputs.max_results }}
+          SEARCH_SCOPE: ${{ inputs.search_scope }}
+          OUTPUT_TIER: ${{ inputs.output_tier }}
+          TAGS: ${{ inputs.tags }}
+          MEMORY_REPO_PATH: ../memory-sync
+        run: |
+          ./research_tool \
+            --query="${{ env.QUERY }}" \
+            --max-results=${{ env.MAX_RESULTS }} \
+            --scope=${{ env.SEARCH_SCOPE }} \
+            --output-tier=${{ env.OUTPUT_TIER }} \
+            --tags="${{ env.TAGS }}" \
+            --memory-repo=${{ env.MEMORY_REPO_PATH }} \
+            --github-token=${{ secrets.GITHUB_TOKEN }} \
+            --output=research-results.json
+
+      - name: Upload research results
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-results
+          path: tibrain/research-results.json
+          retention-days: 30
+
+      - name: Commit research results to memory repo
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cd memory-sync
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Copy results from tibrain to memory-sync tier
+          cp ../tibrain/research-results.json "${{ inputs.output_tier }}/research-${{ github.run_id }}.json"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat(research): add research results for '${{ inputs.query }}' [skip ci]"
+            git push
+          fi
+
+      - name: Create summary issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('tibrain/research-results.json', 'utf8'));
+
+            const body = `## Research Task Completed
+
+            **Query:** \`${{ inputs.query }}\`
+            **Scope:** ${{ inputs.search_scope }}
+            **Results:** ${results.total_found || 0} found
+            **Stored in:** ${{ inputs.output_tier }} tier
+            **Tags:** ${{ inputs.tags }}
+            **Run:** ${github.context.runId}
+
+            ### Summary
+            ${results.summary || 'No summary available'}
+
+            ### Top Findings
+            ${(results.findings || []).slice(0, 5).map((f, i) => `${i + 1}. **${f.title}** - ${f.source} (score: ${f.score})`).join('\n')}
+
+            ### Next Steps
+            - Review full results in \`memory-sync/${{ inputs.output_tier }}/research-${{ github.run_id }}.json\`
+            - Use \`memory.search\` MCP tool to query these results locally
+            - Consider promoting key findings to \`human\` tier for permanent retention`;
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Research] ${github.event.inputs.query}`,
+              body: body,
+              labels: ['research', 'automated', '${{ inputs.output_tier }}']
+            });
+
+  notify-complete:
+    name: Notify Completion
+    runs-on: ubuntu-latest
+    needs: research
+    if: always()
+    steps:
+      - name: Check research status
+        run: |
+          if [ "${{ needs.research.result }}" == "success" ]; then
+            echo "Research task completed successfully"
+          else
+            echo "Research task failed"
+            exit 1
+          fi

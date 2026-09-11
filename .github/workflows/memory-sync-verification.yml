@@ -1,0 +1,203 @@
+# Memory Sync Verification - Daily health check for local-cloud memory sync
+# Verifies synchronization integrity between local tiered memory and GitHub repository
+
+name: Memory Sync Verification
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      notify_on_success:
+        description: 'Send notification on successful verification'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  GO_VERSION: '1.25'
+  MEMORY_TIERS: 'human,core,archival,recall'
+  MEMORY_REPO: 'tibrain-memory-sync'
+  MAX_DRIFT_HOURS: '24'
+
+jobs:
+  verify-sync:
+    name: Verify Memory Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: tibrain
+
+      - name: Checkout memory sync repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ env.MEMORY_REPO }}
+          path: memory-sync
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build verification tool
+        working-directory: ./tibrain
+        run: go build -o verify_sync scripts/verify_memory_sync.go
+
+      - name: Run sync verification
+        working-directory: ./tibrain
+        env:
+          LOCAL_MEMORY_ROOT: .mimocode/data/memory
+          REMOTE_MEMORY_ROOT: ../memory-sync
+          MAX_DRIFT_HOURS: ${{ env.MAX_DRIFT_HOURS }}
+        run: |
+          ./verify_sync \
+            --local-root=${{ env.LOCAL_MEMORY_ROOT }} \
+            --remote-root=${{ env.REMOTE_MEMORY_ROOT }} \
+            --tiers=${{ env.MEMORY_TIERS }} \
+            --max-drift-hours=${{ env.MAX_DRIFT_HOURS }} \
+            --output=sync-report.json
+
+      - name: Upload verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-sync-report
+          path: tibrain/sync-report.json
+          retention-days: 30
+
+      - name: Parse and check report
+        id: check
+        run: |
+          REPORT=$(cat tibrain/sync-report.json)
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPORT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Check for drift issues
+          DRIFT_COUNT=$(echo "$REPORT" | jq '.drift_count // 0')
+          MISSING_LOCAL=$(echo "$REPORT" | jq '.missing_in_local // 0')
+          MISSING_REMOTE=$(echo "$REPORT" | jq '.missing_in_remote // 0')
+          CONFLICTS=$(echo "$REPORT" | jq '.conflicts // 0')
+
+          echo "drift_count=$DRIFT_COUNT" >> $GITHUB_OUTPUT
+          echo "missing_local=$MISSING_LOCAL" >> $GITHUB_OUTPUT
+          echo "missing_remote=$MISSING_REMOTE" >> $GITHUB_OUTPUT
+          echo "conflicts=$CONFLICTS" >> $GITHUB_OUTPUT
+
+          if [ "$DRIFT_COUNT" -gt 0 ] || [ "$MISSING_LOCAL" -gt 0 ] || [ "$MISSING_REMOTE" -gt 0 ] || [ "$CONFLICTS" -gt 0 ]; then
+            echo "has_issues=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_issues=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue on sync issues
+        if: steps.check.outputs.has_issues == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ steps.check.outputs.report }}`;
+            const drift = `${{ steps.check.outputs.drift_count }}`;
+            const missingLocal = `${{ steps.check.outputs.missing_local }}`;
+            const missingRemote = `${{ steps.check.outputs.missing_remote }}`;
+            const conflicts = `${{ steps.check.outputs.conflicts }}`;
+
+            const body = `## Memory Sync Verification Failed
+
+            **Timestamp:** ${new Date().toISOString()}
+            **Workflow:** ${github.context.workflow}
+            **Run:** ${github.context.runId}
+
+            ### Issues Detected:
+            - **Drift entries:** ${drift}
+            - **Missing in local:** ${missingLocal}
+            - **Missing in remote:** ${missingRemote}
+            - **Conflicts:** ${conflicts}
+
+            ### Full Report:
+            \`\`\`json
+            ${report}
+            \`\`\`
+
+            Please investigate the memory sync agent and resolve discrepancies.`;
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '[Memory Sync] Sync verification failed - drift detected',
+              body: body,
+              labels: ['memory-sync', 'verification-failed', 'automated']
+            });
+
+      - name: Notify on success
+        if: steps.check.outputs.has_issues == 'false' && inputs.notify_on_success == 'true'
+        run: |
+          echo "Memory sync verification passed - no issues detected"
+          echo "Sync health: OK"
+
+  verify-tier-integrity:
+    name: Verify Tier Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout memory sync repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ env.MEMORY_REPO }}
+          path: memory-sync
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check tier structure
+        run: |
+          for tier in human core archival recall; do
+            if [ ! -d "memory-sync/$tier" ]; then
+              echo "::error::Missing tier directory: $tier"
+              exit 1
+            fi
+            COUNT=$(find "memory-sync/$tier" -name "*.md" -o -name "*.yaml" -o -name "*.yml" | wc -l)
+            echo "Tier $tier: $COUNT files"
+          done
+
+      - name: Validate YAML frontmatter
+        working-directory: ./memory-sync
+        run: |
+          # Check that all memory files have valid YAML frontmatter
+          find . -name "*.md" -o -name "*.yaml" -o -name "*.yml" | while read file; do
+            if ! head -1 "$file" | grep -q "^---$"; then
+              echo "::warning file=$file::Missing YAML frontmatter delimiter"
+            fi
+            # Check for required fields
+            if ! grep -q "type:" "$file"; then
+              echo "::warning file=$file::Missing 'type' field in frontmatter"
+            fi
+            if ! grep -q "created:" "$file"; then
+              echo "::warning file=$file::Missing 'created' field in frontmatter"
+            fi
+          done
+
+      - name: Check TTL compliance
+        working-directory: ./memory-sync
+        run: |
+          # Check that recall tier entries are not older than 7 days without migration
+          RECALL_OLD=$(find recall -name "*.md" -o -name "*.yaml" -o -name "*.yml" | xargs -I {} sh -c '
+            CREATED=$(grep "created:" {} | head -1 | cut -d: -f2- | xargs)
+            if [ -n "$CREATED" ]; then
+              CREATED_TS=$(date -d "$CREATED" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$CREATED" +%s 2>/dev/null)
+              NOW=$(date +%s)
+              DAYS=$(( (NOW - CREATED_TS) / 86400 ))
+              if [ $DAYS -gt 7 ]; then
+                echo "{} is $DAYS days old (should be migrated to archival)"
+              fi
+            fi
+          ')
+          if [ -n "$RECALL_OLD" ]; then
+            echo "::warning::Recall tier has entries older than 7 days:"
+            echo "$RECALL_OLD"
+          fi
