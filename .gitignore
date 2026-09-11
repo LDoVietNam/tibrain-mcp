@@ -49,3 +49,6 @@
 !internal/
 !internal/**/
 !internal/**/*.go
+
+# Build artifacts
+tibrain.exe

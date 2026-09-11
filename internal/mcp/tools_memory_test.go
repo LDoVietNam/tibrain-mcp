@@ -26,20 +26,20 @@ func memCallTool(t *testing.T, name string, args map[string]any) mcp.CallToolReq
 
 // memDomain is a typed alias for building memory index entries in tests.
 type memDomain struct {
-	Name        string   `yaml:"name"`
-	Confidence  float64  `yaml:"confidence"`
-	Verified    bool     `yaml:"verified"`
-	Entries     []string `yaml:"entries"`
+	Name       string   `yaml:"name"`
+	Confidence float64  `yaml:"confidence"`
+	Verified   bool     `yaml:"verified"`
+	Entries    []string `yaml:"entries"`
 }
 
 // memWriteIndex writes a memory index YAML to path with the given domains.
 func memWriteIndex(t *testing.T, path string, domains []memDomain) {
 	t.Helper()
 	idx := struct {
-		Version   string       `yaml:"version"`
-		Domains   []memDomain  `yaml:"domains"`
+		Version   string      `yaml:"version"`
+		Domains   []memDomain `yaml:"domains"`
 		Retrieval struct {
-			DefaultLimit       int     `yaml:"default_limit"`
+			DefaultLimit        int     `yaml:"default_limit"`
 			ConfidenceThreshold float64 `yaml:"confidence_threshold"`
 		} `yaml:"retrieval"`
 	}{Version: "1.0", Domains: domains}
@@ -536,6 +536,49 @@ func TestToolsMemoryFlush(t *testing.T) {
 // ---------------------------------------------------------------------------
 // readMemoryIndex / searchMemory (pure-ish helpers)
 // ---------------------------------------------------------------------------
+
+// TestResolveMemoryIndexPath verify path resolution theo thứ tự ưu tiên:
+// env var > cạnh binary > cwd fallback.
+func TestResolveMemoryIndexPath(t *testing.T) {
+	t.Run("env var override wins", func(t *testing.T) {
+		t.Setenv("TIBRAIN_MEMORY_INDEX", "/custom/path/index.yaml")
+		if got := resolveMemoryIndexPath(); got != "/custom/path/index.yaml" {
+			t.Errorf("expected env override, got %q", got)
+		}
+	})
+
+	t.Run("falls back to relative when no env and no binary-adjacent file", func(t *testing.T) {
+		// Trong go test, binary test nằm trong temp dir không có data/,
+		// nên phải fallback về relative path — đây chính là hành vi cũ.
+		got := resolveMemoryIndexPath()
+		want := filepath.Join("data", "memory_index.yaml")
+		if got != want {
+			t.Errorf("expected cwd fallback %q, got %q", want, got)
+		}
+	})
+
+	t.Run("binary-adjacent file preferred over cwd", func(t *testing.T) {
+		// resolveMemoryIndexPath dùng os.Executable() — trong go test,
+		// binary nằm ở temp dir. Tạo data/memory_index.yaml cạnh đó.
+		exe, err := os.Executable()
+		if err != nil {
+			t.Skipf("os.Executable failed: %v", err)
+		}
+		dataDir := filepath.Join(filepath.Dir(exe), "data")
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		adjacent := filepath.Join(dataDir, "memory_index.yaml")
+		if err := os.WriteFile(adjacent, []byte("version: 1.0\n"), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(adjacent) })
+
+		if got := resolveMemoryIndexPath(); got != adjacent {
+			t.Errorf("expected binary-adjacent %q, got %q", adjacent, got)
+		}
+	})
+}
 
 func TestReadMemoryIndex(t *testing.T) {
 	path := withTempMemoryIndex(t)

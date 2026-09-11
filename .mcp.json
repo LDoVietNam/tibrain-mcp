@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "tibrain": {
+      "type": "sse",
+      "url": "http://localhost:3005/mcp/sse",
+      "description": "TiBrain MCP Hub - SSE transport (Go service native MCP)"
+    },
+    "tibrain-http": {
+      "type": "http",
+      "url": "http://localhost:3005/mcp",
+      "description": "TiBrain MCP Hub - Streamable HTTP transport"
+    }
+  }
+}
