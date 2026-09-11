@@ -25,26 +25,23 @@ func checkpointCallTool(t *testing.T, name string, args map[string]any) mcp.Call
 	return req
 }
 
-// newCheckpointTestManager creates a Manager and chdir's into a temp dir so
-// the checkpointDir-relative writes are hermetic.
+// newCheckpointTestManager tạo temp memory base và swap package var
+// memoryBaseDir sang đó (restore khi cleanup) — các test checkpoint và
+// memory.flush ghi vào base này thay vì cwd, hermetic và không phụ thuộc
+// môi trường máy chạy test.
 func newCheckpointTestManager(t *testing.T) *Manager {
 	t.Helper()
 	dir := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
+	prev := memoryBaseDir
+	memoryBaseDir = dir
+	t.Cleanup(func() { memoryBaseDir = prev })
 	return &Manager{}
 }
 
 // checkpointPath computes the expected autoresume.md path for a session,
-// rooted at the temp dir the test manager chdir'd into.
+// rooted at the temp memory base set by newCheckpointTestManager.
 func checkpointPath(sessionID string) string {
-	return filepath.Join(checkpointDir, sessionID, "autoresume.md")
+	return filepath.Join(memoryBaseDir, "sessions", sessionID, "autoresume.md")
 }
 
 // ---------------------------------------------------------------------------
@@ -279,14 +276,14 @@ func TestToolsSubagentFlush(t *testing.T) {
 			t.Fatalf("read checkpoint: %v", err)
 		}
 		content := string(data)
-		if !strings.Contains(content, "Auto-Checkpoint") {
-			t.Errorf("expected 'Auto-Checkpoint' header, got: %s", content)
+		if !strings.Contains(content, "# Auto-resume Checkpoint") {
+			t.Errorf("expected '# Auto-resume Checkpoint' header, got: %s", content)
 		}
 		if !strings.Contains(content, "sess-60") {
 			t.Errorf("expected session id in file, got: %s", content)
 		}
-		if !strings.Contains(content, "Context: 60%") {
-			t.Errorf("expected context 60%% in file, got: %s", content)
+		if !strings.Contains(content, "Subagent auto-flush at 60% context") {
+			t.Errorf("expected 'Subagent auto-flush at 60%% context' in file, got: %s", content)
 		}
 		if !strings.Contains(content, "threshold hit") {
 			t.Errorf("expected learnings in file, got: %s", content)
@@ -322,8 +319,8 @@ func TestToolsSubagentFlush(t *testing.T) {
 		if !strings.Contains(fileContent, "Subagent auto-flush at 75% context") {
 			t.Errorf("expected progress summary in file, got: %s", fileContent)
 		}
-		if !strings.Contains(fileContent, "Context: 75%") {
-			t.Errorf("expected 'Context: 75%%' in file, got: %s", fileContent)
+		if !strings.Contains(fileContent, "Subagent auto-flush at 75% context") {
+			t.Errorf("expected 'Subagent auto-flush at 75%% context' in file, got: %s", fileContent)
 		}
 	})
 
@@ -385,7 +382,7 @@ func TestToolsSubagentFlush(t *testing.T) {
 		}
 	})
 
-	t.Run("zero context_percent defaults to 60", func(t *testing.T) {
+	t.Run("zero context_percent below threshold no flush", func(t *testing.T) {
 		m := newCheckpointTestManager(t)
 		ctx := context.Background()
 
@@ -398,9 +395,8 @@ func TestToolsSubagentFlush(t *testing.T) {
 			t.Fatalf("unexpected err: %v", err)
 		}
 		body := textContent(t, res)
-		// 0 should default to 60, triggering a flush.
-		if !strings.Contains(body, "Auto-flushed at 60%") {
-			t.Errorf("expected 0 to default to 60%% flush, got: %s", body)
+		if !strings.Contains(body, "below 60%") {
+			t.Errorf("expected below-threshold message for 0%%, got: %s", body)
 		}
 	})
 
@@ -416,7 +412,9 @@ func TestToolsSubagentFlush(t *testing.T) {
 			t.Fatalf("err: %v", err)
 		}
 
-		expectedDir := filepath.Join(checkpointDir, "sess-path-check")
+		// Session checkpoint nằm dưới <base>/sessions/<sessionID>/ theo
+		// memoryBaseDir đã swap, không phụ thuộc cwd.
+		expectedDir := filepath.Join(memoryBaseDir, "sessions", "sess-path-check")
 		info, err := os.Stat(expectedDir)
 		if err != nil {
 			t.Fatalf("expected checkpoint dir %s: %v", expectedDir, err)
@@ -451,7 +449,7 @@ func TestToolsSubagentFlush_ThresholdTableDriven(t *testing.T) {
 		contextPercent int
 		expectFlush    bool
 	}{
-		{"zero defaults to 60 and flushes", 0, true},
+		{"zero below threshold no flush", 0, false},
 		{"below threshold no flush", 30, false},
 		{"at boundary 59 no flush", 59, false},
 		{"at boundary 60 flushes", 60, true},
@@ -461,15 +459,8 @@ func TestToolsSubagentFlush_ThresholdTableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Each subtest gets its own temp dir.
-			dir := t.TempDir()
-			wd, _ := os.Getwd()
-			t.Cleanup(func() { _ = os.Chdir(wd) })
-			if err := os.Chdir(dir); err != nil {
-				t.Fatalf("chdir: %v", err)
-			}
-
-			m := &Manager{}
+			// Each subtest gets its own temp memory base.
+			m := newCheckpointTestManager(t)
 			ctx := context.Background()
 			req := checkpointCallTool(t, "subagent.flush", map[string]any{
 				"session_id":      "sess-td-" + tt.name,

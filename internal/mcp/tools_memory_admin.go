@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/ti/router/tibrain/internal/memory"
 )
 
-const memoryBasePath = "data/memory"
+// memoryBasePath: tier storage root (human/core/archival/recall), resolve ưu
+// tiên data/memory cạnh binary rồi mới tới cwd fallback — mirror pattern của
+// resolveMemoryIndexPath, tránh phụ thuộc cwd khi binary deploy ở Z:/03_DATA/bin.
+var memoryBasePath = binaryDataPath(filepath.Join(defaultConfigDir, "memory"))
 
 // handleAgentMemoryStatus returns statistics about each memory tier.
 func (m *Manager) handleAgentMemoryStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +19,10 @@ const defaultConfigDir = "data"
 
 const memoryIndexEnv = "TIBRAIN_MEMORY_INDEX"
 
+const memoryBaseEnv = "TIBRAIN_MEMORY_BASE"
+
+const memoryLogEnv = "TIBRAIN_MEMORY_LOG"
+
 type memoryEntry struct {
 	Domain     string   `json:"domain" yaml:"-"`
 	Name       string   `yaml:"name"`
@@ -26,6 +33,7 @@ type memoryEntry struct {
 
 type memoryIndex struct {
 	Version   string        `yaml:"version"`
+	BasePath  string        `yaml:"base_path"`
 	Domains   []memoryEntry `yaml:"domains"`
 	Retrieval struct {
 		DefaultLimit        int     `yaml:"default_limit"`
@@ -63,6 +71,124 @@ func resolveMemoryIndexPath() string {
 		}
 	}
 	return indexRel
+}
+
+// memoryBaseDir là thư mục gốc của memory storage (global MEMORY.md, sessions
+// checkpoint) — mọi tool ghi memory phải đi qua base này để flush (ghi) và
+// search (đọc) không bao giờ lệch nguồn. Resolve theo thứ tự ưu tiên:
+//  1. Env var TIBRAIN_MEMORY_BASE (override tường minh, mirror pattern của
+//     TIBRAIN_MEMORY_INDEX)
+//  2. base_path từ memory_index.yaml (canonical storage mà index trỏ tới)
+//  3. Fallback cuối: "memory" cạnh thư mục chứa binary (os.Executable) —
+//     KHÔNG resolve theo cwd để tránh ghi nhầm Z:/03_DATA/bin/memory khi
+//     tibrain.exe chạy với cwd là bin dir
+//
+// Index đọc lỗi/thiếu base_path → vẫn trả về fallback hợp lệ, write không
+// bao giờ bị chặn chỉ vì resolve fail.
+var memoryBaseDir = resolveMemoryBasePath()
+
+func resolveMemoryBasePath() string {
+	if p := os.Getenv(memoryBaseEnv); p != "" {
+		return p
+	}
+	if idx, err := readMemoryIndex(); err == nil && strings.TrimSpace(idx.BasePath) != "" {
+		return idx.BasePath
+	}
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Join(filepath.Dir(exe), "memory")
+	}
+	return "memory"
+}
+
+// memoryLogPath: append-log MEMORY.md do handleMemoryFlush ghi, đặt dưới
+// memoryBaseDir để flush và search luôn đọc/ghi cùng một file bất kể cwd.
+// Env TIBRAIN_MEMORY_LOG override tường minh file này nếu cần.
+var memoryLogPath = resolveMemoryLogPath()
+
+func resolveMemoryLogPath() string {
+	if p := os.Getenv(memoryLogEnv); p != "" {
+		return p
+	}
+	return filepath.Join(memoryBaseDir, "global", "MEMORY.md")
+}
+
+// binaryDataPath resolve path trong data dir (index, sqlite db, tier storage)
+// ưu tiên cạnh binary rồi mới tới cwd — mirror resolveMemoryIndexPath, tránh
+// phụ thuộc cwd khi binary chạy từ thư mục khác (deploy ở Z:/03_DATA/bin).
+// Path chưa tồn tại cạnh binary thì giữ hành vi cũ (relative theo cwd) để
+// không tự ý đổi nơi tạo file mới.
+func binaryDataPath(rel string) string {
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), rel)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return rel
+}
+
+// memoryLogEntry là một entry đã parse từ MEMORY.md append-log.
+type memoryLogEntry struct {
+	Domain     string
+	Confidence float64
+	Timestamp  string
+	Content    string
+}
+
+// parseMemoryLog parse MEMORY.md append-log theo format handleMemoryFlush:
+//
+//	\n### [RFC3339] domain (confidence: 0.90)\ncontent\n
+//
+// Line không match header pattern được coi là phần content của entry gần nhất.
+func parseMemoryLog(data []byte) []memoryLogEntry {
+	var entries []memoryLogEntry
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // content dài tới 1MB
+
+	var cur *memoryLogEntry
+	for scanner.Scan() {
+		line := scanner.Text()
+		if domain, ts, conf, ok := parseLogHeader(line); ok {
+			entries = append(entries, memoryLogEntry{
+				Domain: domain, Confidence: conf, Timestamp: ts,
+			})
+			cur = &entries[len(entries)-1]
+			continue
+		}
+		if cur != nil && strings.TrimSpace(line) != "" {
+			cur.Content += line + "\n"
+		}
+	}
+	return entries
+}
+
+// parseLogHeader match "### [timestamp] domain (confidence: 0.90)".
+func parseLogHeader(line string) (domain, ts string, conf float64, ok bool) {
+	s := strings.TrimSpace(line)
+	if !strings.HasPrefix(s, "### [") {
+		return "", "", 0, false
+	}
+	end := strings.Index(s, "] ")
+	if end < 0 {
+		return "", "", 0, false
+	}
+	ts = s[5:end]
+	rest := s[end+2:]
+	// rest: "domain (confidence: 0.90)"
+	open := strings.Index(rest, " (confidence: ")
+	if open < 0 {
+		return "", "", 0, false
+	}
+	domain = rest[:open]
+	tail := rest[open+len(" (confidence: "):]
+	if !strings.HasSuffix(tail, ")") {
+		return "", "", 0, false
+	}
+	c, err := strconv.ParseFloat(strings.TrimSuffix(tail, ")"), 64)
+	if err != nil {
+		return "", "", 0, false
+	}
+	return domain, ts, c, true
 }
 
 func readMemoryIndex() (*memoryIndex, error) {
@@ -110,6 +236,27 @@ func searchMemory(params searchParams) ([]string, error) {
 			if queryLower == "" || strings.Contains(strings.ToLower(entry), queryLower) {
 				results = append(results, fmt.Sprintf("[%s] (%d%%) %s",
 					domain.Name, int(domain.Confidence*100), entry))
+				if len(results) >= params.Limit {
+					return results, nil
+				}
+			}
+		}
+	}
+
+	// Unified search: merge thêm MEMORY.md append-log (entry do memory.flush
+	// ghi) — entry mới tìm được ngay mà không cần cập nhật index tĩnh.
+	// Log bị thiếu/lỗi không làm fail search: index vẫn trả kết quả.
+	if data, err := os.ReadFile(memoryLogPath); err == nil {
+		for _, e := range parseMemoryLog(data) {
+			if params.Domain != "" && strings.ToLower(e.Domain) != strings.ToLower(params.Domain) {
+				continue
+			}
+			if e.Confidence < params.MinConfidence {
+				continue
+			}
+			if queryLower == "" || strings.Contains(strings.ToLower(e.Content), queryLower) {
+				results = append(results, fmt.Sprintf("[%s] (%d%%) %s",
+					e.Domain, int(e.Confidence*100), strings.TrimSpace(e.Content)))
 				if len(results) >= params.Limit {
 					return results, nil
 				}

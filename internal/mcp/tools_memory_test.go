@@ -383,13 +383,11 @@ func TestToolsMemoryListDomains(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolsMemoryFlush(t *testing.T) {
-	// handleMemoryFlush writes to memory/../global/MEMORY.md, resolved relative
-	// to the working directory. Each subtest chdirs into an isolated temp dir
-	// so the writes are hermetic. t.Chdir (Go 1.24+) automatically restores the
-	// original directory at the end of the test.
+	// handleMemoryFlush ghi vào memoryLogPath — resolve từ memoryBaseDir
+	// (env TIBRAIN_MEMORY_BASE > base_path index > cạnh binary), KHÔNG theo
+	// cwd. Mỗi subtest swap package vars sang temp base để hermetic.
 	t.Run("flushes learnings to MEMORY.md", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Chdir(dir)
+		dir := withTempMemoryBase(t)
 
 		ctx := context.Background()
 		req := memCallTool(t, "memory.flush", map[string]any{
@@ -411,7 +409,7 @@ func TestToolsMemoryFlush(t *testing.T) {
 			t.Errorf("expected confidence 0.95 in result, got: %s", textContent(t, res))
 		}
 
-		memFile := filepath.Join(dir, "memory", "global", "MEMORY.md")
+		memFile := filepath.Join(dir, "global", "MEMORY.md")
 		data, err := os.ReadFile(memFile)
 		if err != nil {
 			t.Fatalf("read MEMORY.md: %v", err)
@@ -428,8 +426,7 @@ func TestToolsMemoryFlush(t *testing.T) {
 	})
 
 	t.Run("default confidence 0.9 when below 0.8", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Chdir(dir)
+		withTempMemoryBase(t)
 
 		ctx := context.Background()
 		req := memCallTool(t, "memory.flush", map[string]any{
@@ -447,8 +444,7 @@ func TestToolsMemoryFlush(t *testing.T) {
 	})
 
 	t.Run("default confidence 0.9 when above 0.95", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Chdir(dir)
+		withTempMemoryBase(t)
 
 		ctx := context.Background()
 		req := memCallTool(t, "memory.flush", map[string]any{
@@ -500,8 +496,7 @@ func TestToolsMemoryFlush(t *testing.T) {
 	})
 
 	t.Run("appends multiple flushes to MEMORY.md", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Chdir(dir)
+		dir := withTempMemoryBase(t)
 
 		ctx := context.Background()
 		for i := 1; i <= 2; i++ {
@@ -519,7 +514,7 @@ func TestToolsMemoryFlush(t *testing.T) {
 			}
 		}
 
-		memFile := filepath.Join(dir, "memory", "global", "MEMORY.md")
+		memFile := filepath.Join(dir, "global", "MEMORY.md")
 		data, err := os.ReadFile(memFile)
 		if err != nil {
 			t.Fatalf("read MEMORY.md: %v", err)
@@ -576,6 +571,89 @@ func TestResolveMemoryIndexPath(t *testing.T) {
 
 		if got := resolveMemoryIndexPath(); got != adjacent {
 			t.Errorf("expected binary-adjacent %q, got %q", adjacent, got)
+		}
+	})
+}
+
+// TestResolveMemoryBasePath verify base_path resolution theo thứ tự ưu tiên:
+// env TIBRAIN_MEMORY_BASE > base_path từ index > memory cạnh binary (không cwd).
+func TestResolveMemoryBasePath(t *testing.T) {
+	t.Run("env var override wins", func(t *testing.T) {
+		t.Setenv("TIBRAIN_MEMORY_BASE", "/custom/memory/base")
+		if got := resolveMemoryBasePath(); got != "/custom/memory/base" {
+			t.Errorf("expected env override, got %q", got)
+		}
+	})
+
+	t.Run("base_path from index wins over binary-adjacent", func(t *testing.T) {
+		// Index có base_path tường minh → resolver trả đúng base đó kể cả
+		// khi cạnh binary có thư mục memory/ (production scenario: index tại
+		// Z:/03_DATA/bin/data trỏ về canonical store).
+		t.Setenv("TIBRAIN_MEMORY_BASE", "")
+		t.Setenv("TIBRAIN_MEMORY_INDEX", "")
+		t.Setenv("TIBRAIN_MEMORY_LOG", "")
+		idxDir := t.TempDir()
+		indexPath := filepath.Join(idxDir, "memory_index.yaml")
+		// YAML thường dùng forward slash (kể cả production) — normalize khi
+		// so sánh vì filepath.Join trên Windows trả backslash.
+		idxYAML := "version: 1.0\nbase_path: " + filepath.ToSlash(filepath.Join(idxDir, "canonical-memory")) + "\n"
+		if err := os.WriteFile(indexPath, []byte(idxYAML), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		prev := memoryIndexPath
+		memoryIndexPath = indexPath
+		t.Cleanup(func() { memoryIndexPath = prev })
+
+		want := filepath.Join(idxDir, "canonical-memory")
+		if got := resolveMemoryBasePath(); filepath.FromSlash(got) != want {
+			t.Errorf("expected base_path from index %q, got %q", want, got)
+		}
+	})
+
+	t.Run("falls back to memory next to binary when index unreadable", func(t *testing.T) {
+		// Index đọc lỗi → fallback memory cạnh binary, KHÔNG theo cwd —
+		// write vẫn tiếp tục được (fallback chain, không chặn).
+		t.Setenv("TIBRAIN_MEMORY_BASE", "")
+		t.Setenv("TIBRAIN_MEMORY_INDEX", "")
+		t.Setenv("TIBRAIN_MEMORY_LOG", "")
+		dir := t.TempDir()
+		prev := memoryIndexPath
+		memoryIndexPath = filepath.Join(dir, "nope.yaml")
+		t.Cleanup(func() { memoryIndexPath = prev })
+
+		exe, err := os.Executable()
+		if err != nil {
+			t.Skipf("os.Executable failed: %v", err)
+		}
+		want := filepath.Join(filepath.Dir(exe), "memory")
+		if got := resolveMemoryBasePath(); got != want {
+			t.Errorf("expected binary-adjacent fallback %q, got %q", want, got)
+		}
+	})
+}
+
+// TestMemoryLogPathUnderBase verify memoryLogPath luôn nằm dưới memoryBaseDir
+// khi không có env override — flush và search đọc/ghi cùng một file.
+func TestMemoryLogPathUnderBase(t *testing.T) {
+	t.Run("log path derived from base", func(t *testing.T) {
+		// resolveMemoryLogPath đọc package var memoryBaseDir (init một lần),
+		// nên test swap var này thay vì set env base.
+		t.Setenv("TIBRAIN_MEMORY_LOG", "")
+		dir := t.TempDir()
+		prev := memoryBaseDir
+		memoryBaseDir = dir
+		t.Cleanup(func() { memoryBaseDir = prev })
+
+		want := filepath.Join(dir, "global", "MEMORY.md")
+		if got := resolveMemoryLogPath(); got != want {
+			t.Errorf("expected %q, got %q", want, got)
+		}
+	})
+
+	t.Run("env log override wins over base", func(t *testing.T) {
+		t.Setenv("TIBRAIN_MEMORY_LOG", "/custom/log/MEMORY.md")
+		if got := resolveMemoryLogPath(); got != "/custom/log/MEMORY.md" {
+			t.Errorf("expected env override, got %q", got)
 		}
 	})
 }
@@ -648,5 +726,180 @@ func TestSearchMemoryDefaults(t *testing.T) {
 	}
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result (default threshold 0.8, 10 limit), got %d", len(results))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Unified search: MEMORY.md append-log (ghi bởi handleMemoryFlush) phải
+// xuất hiện trong kết quả memory.search — không chỉ index tĩnh.
+// ---------------------------------------------------------------------------
+
+// memWriteAppendLog ghi MEMORY.md append-log theo đúng format handleMemoryFlush:
+// "\n### [timestamp] domain (confidence: 0.90)\ncontent\n"
+func memWriteAppendLog(t *testing.T, path string, domain string, confidence float64, content string) {
+	t.Helper()
+	entry := fmt.Sprintf("\n### [%s] %s (confidence: %.2f)\n%s\n",
+		"2026-09-12T03:00:00+07:00", domain, confidence, content)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(entry), 0644); err != nil {
+		t.Fatalf("write append log: %v", err)
+	}
+}
+
+// withTempMemoryLog swaps memoryLogPath package-level sang temp file và restore khi cleanup.
+func withTempMemoryLog(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "MEMORY.md")
+	prev := memoryLogPath
+	memoryLogPath = path
+	t.Cleanup(func() { memoryLogPath = prev })
+	return path
+}
+
+// withTempMemoryBase swap memoryBaseDir + memoryLogPath package-level sang
+// temp base và restore khi cleanup — dùng cho test ghi memory (flush,
+// checkpoint) để hermetic, không phụ thuộc cwd hay môi trường máy test.
+func withTempMemoryBase(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	prevBase := memoryBaseDir
+	prevLog := memoryLogPath
+	memoryBaseDir = dir
+	// Mirror resolveMemoryLogPath khi không có env override: log nằm dưới
+	// <base>/global/MEMORY.md — không gọi thẳng resolver để test không phụ
+	// thuộc TIBRAIN_MEMORY_LOG có thể set trong môi trường.
+	memoryLogPath = filepath.Join(dir, "global", "MEMORY.md")
+	t.Cleanup(func() {
+		memoryBaseDir = prevBase
+		memoryLogPath = prevLog
+	})
+	return dir
+}
+
+func TestSearchMemoryFindsAppendLogEntry(t *testing.T) {
+	path := withTempMemoryIndex(t)
+	memWriteIndex(t, path, []memDomain{
+		{Name: "go_patterns", Confidence: 0.95, Verified: true,
+			Entries: []string{"SQL anti-pattern: Never fmt.Sprintf(LIMIT %d)"}},
+	})
+	logPath := withTempMemoryLog(t)
+	memWriteAppendLog(t, logPath, "tibrain_arch", 0.90,
+		"Restart TiBrain từ Git Bash: không dùng cmd /c script.bat")
+
+	ctx := context.Background()
+	req := memCallTool(t, "memory.search", map[string]any{
+		"query": "Git Bash",
+	})
+	res, err := (&Manager{}).handleMemorySearch(ctx, req)
+	if err != nil {
+		t.Fatalf("handleMemorySearch err: %v", err)
+	}
+	body := textContent(t, res)
+	if !strings.Contains(body, "Found 1 entries") {
+		t.Errorf("expected append-log entry found, got: %s", body)
+	}
+	if !strings.Contains(body, "[tibrain_arch]") {
+		t.Errorf("expected [tibrain_arch] domain tag, got: %s", body)
+	}
+	if !strings.Contains(body, "cmd /c script.bat") {
+		t.Errorf("expected append-log content in results, got: %s", body)
+	}
+}
+
+func TestSearchMemoryMergeIndexAndLog(t *testing.T) {
+	// Index có 1 entry match, append-log có 1 entry match → search trả cả 2.
+	path := withTempMemoryIndex(t)
+	memWriteIndex(t, path, []memDomain{
+		{Name: "go_patterns", Confidence: 0.95, Verified: true,
+			Entries: []string{"rows.Err() must be called after rows.Next()"}},
+	})
+	logPath := withTempMemoryLog(t)
+	memWriteAppendLog(t, logPath, "go_patterns", 0.90,
+		"rows.Err() check prevents silent loop breakage")
+
+	ctx := context.Background()
+	req := memCallTool(t, "memory.search", map[string]any{
+		"query": "rows.Err()",
+	})
+	res, err := (&Manager{}).handleMemorySearch(ctx, req)
+	if err != nil {
+		t.Fatalf("handleMemorySearch err: %v", err)
+	}
+	body := textContent(t, res)
+	if !strings.Contains(body, "Found 2 entries") {
+		t.Errorf("expected 2 merged entries (index + log), got: %s", body)
+	}
+}
+
+func TestSearchMemoryLogEntryRespectsDomainFilter(t *testing.T) {
+	path := withTempMemoryIndex(t)
+	memWriteIndex(t, path, []memDomain{
+		{Name: "go_patterns", Confidence: 0.95, Verified: true,
+			Entries: []string{"unrelated index entry"}},
+	})
+	logPath := withTempMemoryLog(t)
+	memWriteAppendLog(t, logPath, "dev_environment", 0.85,
+		"Git Bash MSYS path conversion phá cmd /c flags")
+
+	ctx := context.Background()
+	req := memCallTool(t, "memory.search", map[string]any{
+		"query":  "Git Bash",
+		"domain": "go_patterns",
+	})
+	res, err := (&Manager{}).handleMemorySearch(ctx, req)
+	if err != nil {
+		t.Fatalf("handleMemorySearch err: %v", err)
+	}
+	body := textContent(t, res)
+	if strings.Contains(body, "MSYS path conversion") {
+		t.Errorf("expected domain filter to exclude log entry from dev_environment, got: %s", body)
+	}
+}
+
+func TestSearchMemoryLogEntryRespectsMinConfidence(t *testing.T) {
+	logPath := withTempMemoryLog(t)
+	memWriteAppendLog(t, logPath, "dev_environment", 0.82,
+		"low confidence Git Bash learning")
+
+	ctx := context.Background()
+	req := memCallTool(t, "memory.search", map[string]any{
+		"query":          "Git Bash",
+		"min_confidence": 0.85,
+	})
+	res, err := (&Manager{}).handleMemorySearch(ctx, req)
+	if err != nil {
+		t.Fatalf("handleMemorySearch err: %v", err)
+	}
+	body := textContent(t, res)
+	if strings.Contains(body, "low confidence Git Bash learning") {
+		t.Errorf("expected min_confidence to filter out 0.82 log entry, got: %s", body)
+	}
+}
+
+func TestSearchMemoryMissingLogFileStillReturnsIndexResults(t *testing.T) {
+	// Append-log không tồn tại → search index vẫn hoạt động bình thường.
+	path := withTempMemoryIndex(t)
+	memWriteIndex(t, path, []memDomain{
+		{Name: "go_patterns", Confidence: 0.95, Verified: true,
+			Entries: []string{"index only entry about fmt.Sprintf"}},
+	})
+	dir := t.TempDir()
+	prev := memoryLogPath
+	memoryLogPath = filepath.Join(dir, "does-not-exist.md")
+	t.Cleanup(func() { memoryLogPath = prev })
+
+	ctx := context.Background()
+	req := memCallTool(t, "memory.search", map[string]any{
+		"query": "index only",
+	})
+	res, err := (&Manager{}).handleMemorySearch(ctx, req)
+	if err != nil {
+		t.Fatalf("handleMemorySearch err: %v", err)
+	}
+	if !strings.Contains(textContent(t, res), "index only entry") {
+		t.Errorf("expected index entry when log missing, got: %s", textContent(t, res))
 	}
 }

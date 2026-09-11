@@ -10,7 +10,13 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-const checkpointDir = "memory/sessions"
+// sessionCheckpointPath build đường dẫn autoresume.md cho session, rooted
+// tại memoryBaseDir (env TIBRAIN_MEMORY_BASE > base_path index > cạnh binary)
+// thay vì cwd — tránh ghi nhầm memory/sessions theo working directory khi
+// tibrain.exe chạy từ Z:/03_DATA/bin.
+func sessionCheckpointPath(sessionID string) string {
+	return filepath.Join(memoryBaseDir, "sessions", sessionID, "autoresume.md")
+}
 
 func (m *Manager) handleCheckpointSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sessionID, err := req.RequireString("session_id")
@@ -26,7 +32,7 @@ func (m *Manager) handleCheckpointSave(ctx context.Context, req mcp.CallToolRequ
 	learnings := req.GetString("learnings", "")
 	timestamp := time.Now().Format(time.RFC3339)
 
-	cpPath := filepath.Join(checkpointDir, sessionID, "autoresume.md")
+	cpPath := sessionCheckpointPath(sessionID)
 	os.MkdirAll(filepath.Dir(cpPath), 0755)
 
 	content := fmt.Sprintf("# Auto-resume Checkpoint\n\n"+
@@ -58,7 +64,7 @@ func (m *Manager) handleSubagentFlush(ctx context.Context, req mcp.CallToolReque
 	parentID := req.GetString("parent_actor_id", "")
 
 	timestamp := time.Now().Format(time.RFC3339)
-	cpPath := filepath.Join(checkpointDir, sessionID, "autoresume.md")
+	cpPath := sessionCheckpointPath(sessionID)
 	os.MkdirAll(filepath.Dir(cpPath), 0755)
 
 	content := fmt.Sprintf("# Auto-resume Checkpoint\n\n"+
@@ -99,7 +105,10 @@ func (m *Manager) handleMemoryFlush(ctx context.Context, req mcp.CallToolRequest
 	entry := fmt.Sprintf("\n### [%s] %s (confidence: %.2f)\n%s\n",
 		timestamp, domain, confidence, content)
 
-	memoryPath := "memory/global/MEMORY.md"
+	// Dùng memoryLogPath chung với search để flush + search luôn cùng file
+	// (resolve: env TIBRAIN_MEMORY_LOG > memoryBaseDir/global/MEMORY.md,
+	// với memoryBaseDir = env TIBRAIN_MEMORY_BASE > base_path index > cạnh binary).
+	memoryPath := memoryLogPath
 	os.MkdirAll(filepath.Dir(memoryPath), 0755)
 
 	f, err := os.OpenFile(memoryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

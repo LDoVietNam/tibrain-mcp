@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,7 +36,10 @@ func (d *dbManager) open(name string) (*sql.DB, error) {
 		driver = "sqlite"
 		dsn = lookupEnv("TIBRAIN_SQLITE_DSN")
 		if dsn == "" {
-			dsn = "data/tibrain.db"
+			// Resolve data/tibrain.db cạnh binary rồi mới tới cwd fallback —
+			// tránh tạo DB mới theo working directory khi binary chạy từ
+			// thư mục khác (deploy ở Z:/03_DATA/bin).
+			dsn = binaryDataPath(filepath.Join(defaultConfigDir, "tibrain.db"))
 		}
 	default:
 		driver = lookupEnv("TIBRAIN_DB_DRIVER")
@@ -186,4 +190,10 @@ func normalizeVal(v interface{}) interface{} {
 	default:
 		return x
 	}
+}
+
+// DB returns the default sqlite connection for tool implementations that
+// operate against the primary secrets/metadata store.
+func (d *dbManager) DB() (*sql.DB, error) {
+	return d.open("sqlite_main")
 }
