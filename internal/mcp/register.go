@@ -481,7 +481,7 @@ func (m *Manager) registerAllTools() {
 			mcp.WithNumber("limit", mcp.Description("Max entries (default 10)")),
 		), m.handleOpsRecentHandoffs)
 
-	m.addTool("checkpoint.save", "Save session state to checkpoint for resume. Read-only.", security.CatRead,
+	m.addTool("checkpoint.save", "Save session state to checkpoint for resume. Writes to disk.", security.CatWrite,
 		mcp.NewTool("checkpoint.save",
 			mcp.WithDescription("Writes checkpoint.md + flush learnings to memory. Resume via actor(context=\"state\")."),
 			mcp.WithString("session_id", mcp.Required(), mcp.Description("Session to checkpoint")),
@@ -489,7 +489,7 @@ func (m *Manager) registerAllTools() {
 			mcp.WithString("learnings", mcp.Description("Key learnings to persist")),
 		), m.handleCheckpointSave)
 
-	m.addTool("subagent.flush", "Auto-flush subagent state at 60% context. Read-only.", security.CatRead,
+	m.addTool("subagent.flush", "Auto-flush subagent state at 60% context. Writes to disk.", security.CatWrite,
 		mcp.NewTool("subagent.flush",
 			mcp.WithDescription("Check context %, checkpoint if >=60%. Used by subagents for context management."),
 			mcp.WithString("session_id", mcp.Required(), mcp.Description("Subagent session ID")),
@@ -498,9 +498,9 @@ func (m *Manager) registerAllTools() {
 			mcp.WithString("parent_actor_id", mcp.Description("Parent to signal after flush")),
 		), m.handleSubagentFlush)
 
-	m.addTool("memory.flush", "Quick learnings flush to global MEMORY.md. Read-only.", security.CatRead,
+	m.addTool("memory.flush", "Quick learnings flush to global/MEMORY.md + One Store. Writes to disk.", security.CatWrite,
 		mcp.NewTool("memory.flush",
-			mcp.WithDescription("Append learnings to global/MEMORY.md. Auto-promotion eligible."),
+			mcp.WithDescription("Append learnings to global/MEMORY.md and One Store (SQLite FTS5). Dedupes on existing entries. Auto-promotion eligible."),
 			mcp.WithString("domain", mcp.Required(), mcp.Description("Knowledge domain key")),
 			mcp.WithString("content", mcp.Required(), mcp.Description("Learning content to append")),
 			mcp.WithNumber("confidence", mcp.Description("Confidence score 0.8-0.95")),
