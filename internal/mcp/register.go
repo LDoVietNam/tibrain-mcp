@@ -41,6 +41,35 @@ func (m *Manager) registerAllTools() {
 			mcp.WithDescription("List all indexed knowledge domains from memory_index.yaml"),
 		), m.handleMemoryListDomains)
 
+	// ---- TiBrain built-in tools ----
+	m.addTool("tibrain.health", "Check TiBrain service health. Read-only.", security.CatRead,
+		mcp.NewTool("tibrain.health",
+			mcp.WithDescription("Check TiBrain service health status"),
+		), m.handleTibrainHealth)
+
+	m.addTool("tibrain.readiness", "Check TiBrain readiness for requests. Read-only.", security.CatRead,
+		mcp.NewTool("tibrain.readiness",
+			mcp.WithDescription("Check TiBrain readiness for incoming requests"),
+		), m.handleTibrainReadiness)
+
+	m.addTool("tibrain.store", "Store information in cognitive memory. Side-effect.", security.CatWrite,
+		mcp.NewTool("tibrain.store",
+			mcp.WithDescription("Store content in TiBrain's cognitive memory with optional context"),
+			mcp.WithString("content", mcp.Required(), mcp.Description("Content to store")),
+			mcp.WithObject("context", mcp.Description("Optional context map")),
+		), m.handleTibrainStore)
+
+	m.addTool("tibrain.query", "Query knowledge base for information. Read-only.", security.CatRead,
+		mcp.NewTool("tibrain.query",
+			mcp.WithDescription("Query TiBrain's knowledge base via RAG retrieval"),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		), m.handleTibrainQuery)
+
+	m.addTool("tibrain.memory_stats", "Get memory statistics. Read-only.", security.CatRead,
+		mcp.NewTool("tibrain.memory_stats",
+			mcp.WithDescription("Return TiBrain memory usage statistics"),
+		), m.handleTibrainMemoryStats)
+
 	// ---- Filesystem (read) ----
 	m.addTool("fs.read_file", "Read a file within an allowed root. Read-only, side-effect free.", security.CatRead,
 		mcp.NewTool("fs.read_file",

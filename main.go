@@ -112,6 +112,8 @@ func main() {
 
 	// Determine allowed roots for filesystem tools
 	allowedRoots := cfg.AllowedRoots
+	log.Printf("[DEBUG] Config AllowedRoots (from YAML after expandEnv): %v", cfg.AllowedRoots)
+	log.Printf("[DEBUG] Environment HOME=%s, USERPROFILE=%s, PWD=%s", os.Getenv("HOME"), os.Getenv("USERPROFILE"), os.Getenv("PWD"))
 	if len(allowedRoots) == 0 {
 		// Default to home config and current directory
 		home := getEnvOrDefault("HOME", "")
@@ -123,6 +125,7 @@ func main() {
 		}
 		allowedRoots = append(allowedRoots, ".")
 	}
+	log.Printf("[DEBUG] Final allowedRoots passed to Manager: %v", allowedRoots)
 
 	manager := mcp.NewManager(cfg, guard, auditor, mem, retrievalRouter, allowedRoots, authenticator)
 
