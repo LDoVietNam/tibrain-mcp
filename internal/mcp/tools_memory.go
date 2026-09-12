@@ -204,6 +204,13 @@ func readMemoryIndex() (*memoryIndex, error) {
 }
 
 func searchMemory(params searchParams) ([]string, error) {
+	// One Store (SQLite FTS5) là nguồn search chính. Nếu DB lỗi (mất file,
+	// schema hỏng...) thì fallback về đường cũ index yaml + append-log để
+	// search không bao giờ chết hoàn toàn — degraded, không down.
+	if results, err := storeMemorySearch(params); err == nil {
+		return results, nil
+	}
+
 	idx, err := readMemoryIndex()
 	if err != nil {
 		return nil, err
@@ -288,7 +295,9 @@ func (m *Manager) handleMemorySearch(ctx context.Context, req mcp.CallToolReques
 		Limit:         limit,
 	})
 	if err != nil {
-		return mcp.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		// F-03: chi tiết lỗi (path/index) vào stderr, client nhận generic.
+		fmt.Fprintf(os.Stderr, "[memory.search] query %q failed: %v\n", query, err)
+		return mcp.NewToolResultText("Error: memory search failed"), nil
 	}
 
 	if len(results) == 0 {
@@ -303,9 +312,21 @@ func (m *Manager) handleMemorySearch(ctx context.Context, req mcp.CallToolReques
 }
 
 func (m *Manager) handleMemoryListDomains(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// One Store trước: stats phản ánh DB thực (bao gồm entries flush sau khi
+	// index tĩnh sinh ra). Fallback về index yaml khi DB lỗi.
+	if lines, err := storeMemoryListDomains(); err == nil {
+		output := "Available memory domains:\n"
+		for _, l := range lines {
+			output += l + "\n"
+		}
+		return mcp.NewToolResultText(strings.TrimSpace(output)), nil
+	}
+
 	idx, err := readMemoryIndex()
 	if err != nil {
-		return mcp.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		// F-03: chi tiết lỗi vào stderr, client nhận generic.
+		fmt.Fprintf(os.Stderr, "[memory.list_domains] read index %s failed: %v\n", memoryIndexPath, err)
+		return mcp.NewToolResultText("Error: cannot list memory domains"), nil
 	}
 	output := "Available memory domains:\n"
 	for _, d := range idx.Domains {

@@ -56,13 +56,25 @@ func memWriteIndex(t *testing.T, path string, domains []memDomain) {
 
 // withTempMemoryIndex swaps the package-level memoryIndexPath to point at a
 // fresh temp file and restores it on cleanup. Returns the temp path.
+//
+// One Store: swap thêm memoryStoreDSN sang temp + reset memStoreHolder để
+// mỗi test có SQLite store riêng — searchMemory giờ ưu tiên One Store và
+// importer one-shot chỉ chạy lần mở DB đầu tiên, holder singleton không được
+// leak state giữa các test.
 func withTempMemoryIndex(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "memory_index.yaml")
 	prev := memoryIndexPath
 	memoryIndexPath = path
-	t.Cleanup(func() { memoryIndexPath = prev })
+	prevDSN := memoryStoreDSN
+	memoryStoreDSN = filepath.Join(dir, "memory_store.db")
+	t.Cleanup(func() {
+		resetMemoryStore(t)
+		memoryIndexPath = prev
+		memoryStoreDSN = prevDSN
+	})
+	resetMemoryStore(t)
 	return path
 }
 
@@ -267,6 +279,9 @@ func TestToolsMemorySearch(t *testing.T) {
 	})
 
 	t.Run("missing index file returns error text", func(t *testing.T) {
+		// One Store phải fail trước để searchMemory rơi vào fallback index cũ;
+		// index cũng thiếu → "Error: memory search failed" (F-03 generic).
+		withBrokenMemoryStore(t)
 		// Point memoryIndexPath at a non-existent path.
 		dir := t.TempDir()
 		prev := memoryIndexPath
@@ -281,16 +296,24 @@ func TestToolsMemorySearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.Contains(textContent(t, res), "Error") {
+		if !strings.Contains(textContent(t, res), "Error: memory search failed") {
 			t.Errorf("expected error message for missing index, got: %s", textContent(t, res))
 		}
 	})
 
 	t.Run("malformed index yaml returns error text", func(t *testing.T) {
-		path := withTempMemoryIndex(t)
-		if err := os.WriteFile(path, []byte(":::not:valid:yaml:::broken"), 0644); err != nil {
+		// Store fail → fallback index; index malformed → error (F-03 generic).
+		// Không ép store fail thì One Store mở OK tại temp DSN và trả
+		// "No memory entries found" — không phải path đang được test.
+		withBrokenMemoryStore(t)
+		dir := t.TempDir()
+		badYAML := filepath.Join(dir, "bad.yaml")
+		if err := os.WriteFile(badYAML, []byte(":::not:valid:yaml:::broken"), 0644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
+		prev := memoryIndexPath
+		memoryIndexPath = badYAML
+		t.Cleanup(func() { memoryIndexPath = prev })
 
 		ctx := context.Background()
 		req := memCallTool(t, "memory.search", map[string]any{
@@ -300,7 +323,7 @@ func TestToolsMemorySearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.Contains(textContent(t, res), "Error") {
+		if !strings.Contains(textContent(t, res), "Error: memory search failed") {
 			t.Errorf("expected error message for malformed YAML, got: %s", textContent(t, res))
 		}
 	})
@@ -361,6 +384,11 @@ func TestToolsMemoryListDomains(t *testing.T) {
 	})
 
 	t.Run("missing index file returns error text", func(t *testing.T) {
+		// One Store phải fail trước để handleMemoryListDomains rơi vào
+		// fallback index; index cũng thiếu → "Error: cannot list memory
+		// domains" (F-03 generic). withBrokenMemoryStore ép store fail
+		// deterministic — không phụ thuộc việc store có mở được hay không.
+		withBrokenMemoryStore(t)
 		dir := t.TempDir()
 		prev := memoryIndexPath
 		memoryIndexPath = filepath.Join(dir, "nope.yaml")
@@ -372,7 +400,7 @@ func TestToolsMemoryListDomains(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.Contains(textContent(t, res), "Error") {
+		if !strings.Contains(textContent(t, res), "Error: cannot list memory domains") {
 			t.Errorf("expected error message for missing index, got: %s", textContent(t, res))
 		}
 	})
@@ -705,6 +733,8 @@ func TestReadMemoryIndexMalformed(t *testing.T) {
 func TestSearchMemoryDefaults(t *testing.T) {
 	path := withTempMemoryIndex(t)
 	// Write an index WITHOUT retrieval limits so the defaults kick in.
+	// Entry là 1 token "xxxxx" — FTS5 match theo token (không phải
+	// substring như đường index cũ), nên query phải là token đầy đủ.
 	idx := struct {
 		Version string      `yaml:"version"`
 		Domains []memDomain `yaml:"domains"`
@@ -720,7 +750,7 @@ func TestSearchMemoryDefaults(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	results, err := searchMemory(searchParams{Query: "x"})
+	results, err := searchMemory(searchParams{Query: strings.Repeat("x", 5)})
 	if err != nil {
 		t.Fatalf("searchMemory err: %v", err)
 	}
@@ -749,19 +779,30 @@ func memWriteAppendLog(t *testing.T, path string, domain string, confidence floa
 }
 
 // withTempMemoryLog swaps memoryLogPath package-level sang temp file và restore khi cleanup.
+// Mirror withTempMemoryIndex: cũng swap memoryStoreDSN + reset memStoreHolder
+// để importer one-shot của One Store đọc đúng log temp của test này.
 func withTempMemoryLog(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "MEMORY.md")
 	prev := memoryLogPath
 	memoryLogPath = path
-	t.Cleanup(func() { memoryLogPath = prev })
+	prevDSN := memoryStoreDSN
+	memoryStoreDSN = filepath.Join(dir, "memory_store.db")
+	t.Cleanup(func() {
+		resetMemoryStore(t)
+		memoryLogPath = prev
+		memoryStoreDSN = prevDSN
+	})
+	resetMemoryStore(t)
 	return path
 }
 
 // withTempMemoryBase swap memoryBaseDir + memoryLogPath package-level sang
 // temp base và restore khi cleanup — dùng cho test ghi memory (flush,
 // checkpoint) để hermetic, không phụ thuộc cwd hay môi trường máy test.
+// Mirror withTempMemoryStore: cũng swap memoryStoreDSN + reset memStoreHolder
+// vì handleMemoryFlush giờ ghi song song vào One Store (SQLite).
 func withTempMemoryBase(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -772,11 +813,33 @@ func withTempMemoryBase(t *testing.T) string {
 	// <base>/global/MEMORY.md — không gọi thẳng resolver để test không phụ
 	// thuộc TIBRAIN_MEMORY_LOG có thể set trong môi trường.
 	memoryLogPath = filepath.Join(dir, "global", "MEMORY.md")
+	prevDSN := memoryStoreDSN
+	memoryStoreDSN = filepath.Join(dir, "memory_store.db")
 	t.Cleanup(func() {
+		resetMemoryStore(t)
 		memoryBaseDir = prevBase
 		memoryLogPath = prevLog
+		memoryStoreDSN = prevDSN
 	})
+	resetMemoryStore(t)
 	return dir
+}
+
+// withBrokenMemoryStore swap memoryStoreDSN sang path trong thư mục KHÔNG
+// tồn tại — memoryStoreDB() sẽ fail khi mở (SQLite không tự tạo thư mục cha).
+// Dùng để test fallback chain của searchMemory / handleMemoryListDomains khi
+// One Store không mở được: trả về kết quả từ index yaml cũ (degraded, không
+// chết hoàn toàn).
+func withBrokenMemoryStore(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	prevDSN := memoryStoreDSN
+	memoryStoreDSN = filepath.Join(dir, "no-such-dir", "memory_store.db")
+	t.Cleanup(func() {
+		resetMemoryStore(t)
+		memoryStoreDSN = prevDSN
+	})
+	resetMemoryStore(t)
 }
 
 func TestSearchMemoryFindsAppendLogEntry(t *testing.T) {

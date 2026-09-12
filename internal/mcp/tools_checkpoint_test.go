@@ -25,16 +25,27 @@ func checkpointCallTool(t *testing.T, name string, args map[string]any) mcp.Call
 	return req
 }
 
-// newCheckpointTestManager tạo temp memory base và swap package var
-// memoryBaseDir sang đó (restore khi cleanup) — các test checkpoint và
-// memory.flush ghi vào base này thay vì cwd, hermetic và không phụ thuộc
-// môi trường máy chạy test.
+// newCheckpointTestManager tạo temp memory base và swap package vars
+// (memoryBaseDir + memoryStoreDSN) sang đó (restore khi cleanup) — các test
+// checkpoint và memory.flush ghi vào base này thay vì cwd, hermetic và không
+// phụ thuộc môi trường máy chạy test.
+//
+// One Store: mirror withTempMemoryBase trong tools_memory_test.go — swap
+// thêm DSN One Store + reset memStoreHolder vì handleMemoryFlush ghi song
+// song vào SQLite store; không swap sẽ leak state qua singleton giữa các test.
 func newCheckpointTestManager(t *testing.T) *Manager {
 	t.Helper()
 	dir := t.TempDir()
 	prev := memoryBaseDir
 	memoryBaseDir = dir
-	t.Cleanup(func() { memoryBaseDir = prev })
+	prevDSN := memoryStoreDSN
+	memoryStoreDSN = filepath.Join(dir, "memory_store.db")
+	t.Cleanup(func() {
+		resetMemoryStore(t)
+		memoryBaseDir = prev
+		memoryStoreDSN = prevDSN
+	})
+	resetMemoryStore(t)
 	return &Manager{}
 }
 
@@ -461,9 +472,12 @@ func TestToolsSubagentFlush_ThresholdTableDriven(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets its own temp memory base.
 			m := newCheckpointTestManager(t)
+			// F-01: sessionID chỉ cho phép [A-Za-z0-9._-] — test name chứa
+			// khoảng trắng nên phải sanitize thay vì nối thẳng.
+			sessID := "sess-td-" + strings.ReplaceAll(tt.name, " ", "-")
 			ctx := context.Background()
 			req := checkpointCallTool(t, "subagent.flush", map[string]any{
-				"session_id":      "sess-td-" + tt.name,
+				"session_id":      sessID,
 				"context_percent": tt.contextPercent,
 				"learnings":       "boundary test",
 			})
@@ -480,14 +494,14 @@ func TestToolsSubagentFlush_ThresholdTableDriven(t *testing.T) {
 				if !strings.Contains(body, "Auto-flushed") {
 					t.Errorf("expected flush, got: %s", body)
 				}
-				if _, err := os.Stat(checkpointPath("sess-td-" + tt.name)); err != nil {
+				if _, err := os.Stat(checkpointPath(sessID)); err != nil {
 					t.Errorf("expected checkpoint file to exist: %v", err)
 				}
 			} else {
 				if !strings.Contains(body, "below 60%") {
 					t.Errorf("expected no-flush message, got: %s", body)
 				}
-				if _, err := os.Stat(checkpointPath("sess-td-" + tt.name)); !os.IsNotExist(err) {
+				if _, err := os.Stat(checkpointPath(sessID)); !os.IsNotExist(err) {
 					t.Error("expected no checkpoint file when below threshold")
 				}
 			}
