@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,16 +73,19 @@ func (m *Manager) handleDBQuery(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 	db, err := m.dbm.open(conn)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		fmt.Fprintf(os.Stderr, "[db.query] open %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("query failed: cannot open database"), nil
 	}
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("query failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[db.query] query %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("query failed"), nil
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		fmt.Fprintf(os.Stderr, "[db.query] columns %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("query failed"), nil
 	}
 	var result []map[string]interface{}
 	for rows.Next() {
@@ -91,7 +95,8 @@ func (m *Manager) handleDBQuery(ctx context.Context, req mcp.CallToolRequest) (*
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			fmt.Fprintf(os.Stderr, "[db.query] scan %s failed: %v\n", conn, err)
+			return mcp.NewToolResultError("query failed"), nil
 		}
 		row := make(map[string]interface{}, len(cols))
 		for i, c := range cols {
@@ -114,11 +119,13 @@ func (m *Manager) handleDBExecute(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	db, err := m.dbm.open(conn)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		fmt.Fprintf(os.Stderr, "[db.execute] open %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("execute failed: cannot open database"), nil
 	}
 	res, err := db.ExecContext(ctx, stmt)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("execute failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[db.execute] stmt %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("execute failed"), nil
 	}
 	aff, _ := res.RowsAffected()
 	return mcp.NewToolResultText(fmt.Sprintf("ok rows_affected=%d", aff)), nil
@@ -131,18 +138,21 @@ func (m *Manager) handleDBSchema(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	db, err := m.dbm.open(conn)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		fmt.Fprintf(os.Stderr, "[db.schema] open %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("schema failed: cannot open database"), nil
 	}
 	rows, err := db.QueryContext(ctx, "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("schema failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[db.schema] query %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("schema failed"), nil
 	}
 	defer rows.Close()
 	var tables []string
 	for rows.Next() {
 		var name, typ string
 		if err := rows.Scan(&name, &typ); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			fmt.Fprintf(os.Stderr, "[db.schema] scan %s failed: %v\n", conn, err)
+			return mcp.NewToolResultError("schema failed"), nil
 		}
 		tables = append(tables, fmt.Sprintf("%s (%s)", name, typ))
 	}
@@ -160,20 +170,24 @@ func (m *Manager) handleDBTransaction(ctx context.Context, req mcp.CallToolReque
 	}
 	db, err := m.dbm.open(conn)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		fmt.Fprintf(os.Stderr, "[db.transaction] open %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("transaction failed: cannot open database"), nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("begin failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[db.transaction] begin %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("transaction failed"), nil
 	}
 	for _, s := range statements {
 		if _, err := tx.ExecContext(ctx, s); err != nil {
 			_ = tx.Rollback()
-			return mcp.NewToolResultError(fmt.Sprintf("exec failed, rolled back: %v", err)), nil
+			fmt.Fprintf(os.Stderr, "[db.transaction] exec %s failed: %v\n", conn, err)
+			return mcp.NewToolResultError("transaction failed"), nil
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("commit failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[db.transaction] commit %s failed: %v\n", conn, err)
+		return mcp.NewToolResultError("transaction failed"), nil
 	}
 	return mcp.NewToolResultText(fmt.Sprintf("ok statements=%d", len(statements))), nil
 }

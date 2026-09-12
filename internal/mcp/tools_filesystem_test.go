@@ -1394,8 +1394,8 @@ func TestHandleFSDelete(t *testing.T) {
 		if !res.IsError {
 			t.Fatal("expected error for nonexistent file")
 		}
-		if !strings.Contains(fsResultText(res), "stat failed") {
-			t.Errorf("expected stat failed, got: %s", fsResultText(res))
+		if !strings.Contains(fsResultText(res), "delete failed") {
+			t.Errorf("expected delete failed, got: %s", fsResultText(res))
 		}
 	})
 
@@ -1496,8 +1496,8 @@ func TestHandleFSHash(t *testing.T) {
 		if !res.IsError {
 			t.Fatal("expected error")
 		}
-		if !strings.Contains(fsResultText(res), "open failed") {
-			t.Errorf("expected open failed, got: %s", fsResultText(res))
+		if !strings.Contains(fsResultText(res), "hash failed") {
+			t.Errorf("expected hash failed, got: %s", fsResultText(res))
 		}
 	})
 

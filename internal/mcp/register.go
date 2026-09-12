@@ -437,10 +437,10 @@ func (m *Manager) registerAllTools() {
 		), m.handleTaskRetry)
 
 	// ---- Ops Tools (quality gate, audit, tracker) ----
-	m.addTool("ops.qualitygate", "Run lint → vet → build → test quality gate. Read-only.", security.CatRead,
+	m.addTool("ops.qualitygate", "Run lint → vet → build → test quality gate. Side-effect: executes commands.", security.CatWrite,
 		mcp.NewTool("ops.qualitygate",
 			mcp.WithDescription("Executes gofmt, go vet, go build, go test against a repo. Supports parallel mode."),
-			mcp.WithString("repo_path", mcp.Description("Repository path (default: .)")),
+			mcp.WithString("repo_path", mcp.Description("Repository path under an allowed root (default: .)")),
 			mcp.WithBoolean("parallel", mcp.Description("Run steps in parallel (default: false)")),
 		), m.handleOpsQualityGate)
 

@@ -70,7 +70,8 @@ func (m *Manager) handleFSReadFile(ctx context.Context, req mcp.CallToolRequest)
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("read failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.read_file] read %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("read failed"), nil
 	}
 	if len(data) > maxFileBytes {
 		return mcp.NewToolResultError("file exceeds max read size (4MB)"), nil
@@ -93,7 +94,8 @@ func (m *Manager) handleFSStat(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 	info, err := os.Lstat(resolved)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("stat failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.stat] stat %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("stat failed"), nil
 	}
 	out := map[string]interface{}{
 		"name":    info.Name(),
@@ -117,11 +119,15 @@ func (m *Manager) handleFSList(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 	entries, err := os.ReadDir(resolved)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("list failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.list] list %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("list failed"), nil
 	}
 	out := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, map[string]interface{}{"name": e.Name(), "is_dir": e.IsDir()})
+		out = append(out, map[string]interface{}{
+			"name":   e.Name(),
+			"is_dir": e.IsDir(),
+		})
 	}
 	b, _ := json.Marshal(out)
 	return mcp.NewToolResultText(string(b)), nil
@@ -174,10 +180,12 @@ func (m *Manager) handleFSWriteFile(ctx context.Context, req mcp.CallToolRequest
 		return errInvalidParams(err.Error()), nil
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o700); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("mkdir failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.write_file] mkdir %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("write failed"), nil
 	}
 	if err := os.WriteFile(resolved, []byte(content), 0o600); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("write failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.write_file] write %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("write failed"), nil
 	}
 	return mcp.NewToolResultText("ok"), nil
 }
@@ -197,11 +205,13 @@ func (m *Manager) handleFSAppendFile(ctx context.Context, req mcp.CallToolReques
 	}
 	f, err := os.OpenFile(resolved, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.append_file] open %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("append failed"), nil
 	}
 	defer f.Close()
 	if _, err := f.WriteString(content); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("append failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.append_file] write %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("append failed"), nil
 	}
 	return mcp.NewToolResultText("ok"), nil
 }
@@ -216,7 +226,8 @@ func (m *Manager) handleFSMkdir(ctx context.Context, req mcp.CallToolRequest) (*
 		return errInvalidParams(err.Error()), nil
 	}
 	if err := os.MkdirAll(resolved, 0o700); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("mkdir failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.mkdir] mkdir %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("mkdir failed"), nil
 	}
 	return mcp.NewToolResultText("ok"), nil
 }
@@ -239,7 +250,8 @@ func (m *Manager) handleFSCopy(ctx context.Context, req mcp.CallToolRequest) (*m
 		return errInvalidParams("dst: " + err.Error()), nil
 	}
 	if err := copyFile(rs, rd); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("copy failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.copy] copy %s->%s failed: %v\n", rs, rd, err)
+		return mcp.NewToolResultError("copy failed"), nil
 	}
 	return mcp.NewToolResultText("ok"), nil
 }
@@ -262,7 +274,8 @@ func (m *Manager) handleFSMove(ctx context.Context, req mcp.CallToolRequest) (*m
 		return errInvalidParams("dst: " + err.Error()), nil
 	}
 	if err := os.Rename(rs, rd); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("move failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.move] move %s->%s failed: %v\n", rs, rd, err)
+		return mcp.NewToolResultError("move failed"), nil
 	}
 	return mcp.NewToolResultText("ok"), nil
 }
@@ -282,18 +295,21 @@ func (m *Manager) handleFSDelete(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	info, err := os.Lstat(resolved)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("stat failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.delete] stat %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("delete failed"), nil
 	}
 	if info.IsDir() {
 		if !req.GetBool("recursive", false) {
 			return mcp.NewToolResultError("refusing to delete directory without recursive=true"), nil
 		}
 		if err := os.RemoveAll(resolved); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("rmdir failed: %v", err)), nil
+			fmt.Fprintf(os.Stderr, "[fs.delete] rmdir %s failed: %v\n", resolved, err)
+			return mcp.NewToolResultError("delete failed"), nil
 		}
 	} else {
 		if err := os.Remove(resolved); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("delete failed: %v", err)), nil
+			fmt.Fprintf(os.Stderr, "[fs.delete] remove %s failed: %v\n", resolved, err)
+			return mcp.NewToolResultError("delete failed"), nil
 		}
 	}
 	return mcp.NewToolResultText("ok"), nil
@@ -310,12 +326,14 @@ func (m *Manager) handleFSHash(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 	f, err := os.Open(resolved)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.hash] open %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("hash failed"), nil
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("hash failed: %v", err)), nil
+		fmt.Fprintf(os.Stderr, "[fs.hash] read %s failed: %v\n", resolved, err)
+		return mcp.NewToolResultError("hash failed"), nil
 	}
 	return mcp.NewToolResultText(hex.EncodeToString(h.Sum(nil))), nil
 }
@@ -329,12 +347,13 @@ func (m *Manager) handleFSBatch(ctx context.Context, req mcp.CallToolRequest) (*
 	for _, p := range ops {
 		resolved, err := resolveSafePath(p)
 		if err != nil {
-			results = append(results, map[string]string{"path": p, "error": err.Error()})
+			results = append(results, map[string]string{"path": p, "error": "path not allowed"})
 			continue
 		}
 		f, err := os.Open(resolved)
 		if err != nil {
-			results = append(results, map[string]string{"path": p, "error": err.Error()})
+			fmt.Fprintf(os.Stderr, "[fs.batch] open %s failed: %v\n", resolved, err)
+			results = append(results, map[string]string{"path": p, "error": "hash failed"})
 			continue
 		}
 		h := sha256.New()

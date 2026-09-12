@@ -555,8 +555,8 @@ func TestHandleDBTransaction(t *testing.T) {
 		if !res.IsError {
 			t.Fatal("expected error result for failing transaction")
 		}
-		if !strings.Contains(textContent(t, res), "rolled back") {
-			t.Errorf("expected rolled back message, got: %s", textContent(t, res))
+		if !strings.Contains(textContent(t, res), "transaction failed") {
+			t.Errorf("expected transaction failed message, got: %s", textContent(t, res))
 		}
 		// Eve must not exist because the transaction rolled back.
 		var n int

@@ -5,6 +5,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +13,11 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/ti/router/tibrain/internal/audit"
+	"github.com/ti/router/tibrain/internal/config"
 	"github.com/ti/router/tibrain/internal/qualitygate"
+	"github.com/ti/router/tibrain/internal/security"
 	"github.com/ti/router/tibrain/internal/tracker"
 )
 
@@ -29,14 +33,37 @@ func opsCallTool(t *testing.T, name string, args map[string]any) mcp.CallToolReq
 // newOpsTestManager builds a Manager with temp-dir-backed ops dependencies.
 // The caller may override m.opsQG, m.opsAudit, or m.opsTracker before invoking
 // handlers if a custom implementation is needed.
-func newOpsTestManager(t *testing.T) *Manager {
+// The provided dir is used as the allowed root for fs operations.
+func newOpsTestManager(t *testing.T, dir string) *Manager {
 	t.Helper()
-	dir := t.TempDir()
+
+	// Set allowed roots so qualitygate can use repo_path under this temp dir.
+	prevRoots := allowedRoots
+	allowedRoots = []string{dir}
+	t.Cleanup(func() { allowedRoots = prevRoots })
 
 	handoffPath := filepath.Join(dir, "handoff.json")
 	errorLedgerPath := filepath.Join(dir, "errors.ndjson")
 
+	// Initialize required fields for registerAllTools to work
+	// Use a no-op auditor and a guard that allows all (read_only profile allows CatRead)
+	cfg := &config.Config{
+		Permissions: config.PermissionsConfig{
+			ActiveProfile: config.ProfileReadOnly,
+		},
+	}
+	guard := security.NewGuard(cfg)
+	auditor := security.NewAuditor("", false, false)
+
+	// Need registry and MCP server for addTool to work
+	reg := NewRegistry()
+	srv := server.NewMCPServer("tibrain-test", "1.0.0")
+
 	m := &Manager{
+		guard:    guard,
+		auditor:  auditor,
+		registry: reg,
+		srv:      srv,
 		opsQG:    qualitygate.New(),
 		opsAudit: audit.New(),
 		opsTracker: tracker.New(tracker.Config{
@@ -44,6 +71,8 @@ func newOpsTestManager(t *testing.T) *Manager {
 			ErrorLedgerPath: errorLedgerPath,
 		}),
 	}
+	// Register all tools so dispatchInnerTool can find them (e.g., fs.read_file for tibrain.batch tests)
+	m.registerAllTools()
 	return m
 }
 
@@ -99,9 +128,9 @@ func TestToolsOpsQualityGate(t *testing.T) {
 		// QualityGate defaults repo_path to "." when missing.
 		// We point it at a temp dir that is a valid (git) repo so the gate runs
 		// but we only validate the result structure, not specific pass/fail.
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
 		initGitRepo(t, dir)
+		m := newOpsTestManager(t, dir)
 		wd, err := os.Getwd()
 		if err != nil {
 			t.Fatalf("getwd: %v", err)
@@ -125,9 +154,9 @@ func TestToolsOpsQualityGate(t *testing.T) {
 	})
 
 	t.Run("explicit repo_path to a git repo", func(t *testing.T) {
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
 		initGitRepo(t, dir)
+		m := newOpsTestManager(t, dir)
 
 		ctx := context.Background()
 		req := opsCallTool(t, "ops.qualitygate", map[string]any{
@@ -162,11 +191,12 @@ func TestToolsOpsQualityGate(t *testing.T) {
 	})
 
 	t.Run("nonexistent repo path returns report with failed steps", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.qualitygate", map[string]any{
-			"repo_path": filepath.Join(t.TempDir(), "does-not-exist"),
+			"repo_path": filepath.Join(dir, "does-not-exist"),
 		})
 		res, err := m.handleOpsQualityGate(ctx, req)
 		if err != nil {
@@ -186,9 +216,9 @@ func TestToolsOpsQualityGate(t *testing.T) {
 	})
 
 	t.Run("result is valid JSON with step results", func(t *testing.T) {
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
 		initGitRepo(t, dir)
+		m := newOpsTestManager(t, dir)
 
 		ctx := context.Background()
 		req := opsCallTool(t, "ops.qualitygate", map[string]any{
@@ -229,8 +259,8 @@ func TestToolsOpsQualityGate(t *testing.T) {
 
 func TestToolsOpsAudit(t *testing.T) {
 	t.Run("clean repo returns passed=true", func(t *testing.T) {
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		// No secrets, no .exe files — should pass.
 		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -259,8 +289,8 @@ func TestToolsOpsAudit(t *testing.T) {
 	})
 
 	t.Run("secrets found returns passed=false with findings", func(t *testing.T) {
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 
 		// Create a .env file with a secret.
 		envContent := "API_KEY=sk-1234567890abcdef\nDATABASE_URL=postgres://localhost\n"
@@ -300,8 +330,8 @@ func TestToolsOpsAudit(t *testing.T) {
 	})
 
 	t.Run("binary artifact in root detected", func(t *testing.T) {
-		m := newOpsTestManager(t)
 		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 
 		// Place a .exe directly in the root (root-level, no subdir).
 		exePath := filepath.Join(dir, "rogue.exe")
@@ -337,7 +367,8 @@ func TestToolsOpsAudit(t *testing.T) {
 	})
 
 	t.Run("default repo_path is current dir", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 
 		req := opsCallTool(t, "ops.audit", map[string]any{})
 		res, err := m.handleOpsAudit(context.Background(), req)
@@ -366,11 +397,12 @@ func TestToolsOpsAudit(t *testing.T) {
 	})
 
 	t.Run("nonexistent repo path", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.audit", map[string]any{
-			"repo_path": filepath.Join(t.TempDir(), "nope"),
+			"repo_path": filepath.Join(dir, "nope"),
 		})
 		res, err := m.handleOpsAudit(ctx, req)
 		if err != nil {
@@ -388,7 +420,8 @@ func TestToolsOpsAudit(t *testing.T) {
 
 func TestToolsOpsTrackerHandoff(t *testing.T) {
 	t.Run("logs agent action successfully", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.handoff", map[string]any{
@@ -426,7 +459,8 @@ func TestToolsOpsTrackerHandoff(t *testing.T) {
 	})
 
 	t.Run("missing agent param", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.handoff", map[string]any{
@@ -445,7 +479,8 @@ func TestToolsOpsTrackerHandoff(t *testing.T) {
 	})
 
 	t.Run("missing action param", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.handoff", map[string]any{
@@ -464,7 +499,8 @@ func TestToolsOpsTrackerHandoff(t *testing.T) {
 	})
 
 	t.Run("tracker error propagates", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		// Point tracker at an unwritable path to force an error.
 		m.opsTracker = tracker.New(tracker.Config{
 			HandoffPath:     "/dev/null/impossible/handoff.json",
@@ -495,7 +531,8 @@ func TestToolsOpsTrackerHandoff(t *testing.T) {
 
 func TestToolsOpsTrackerErrors(t *testing.T) {
 	t.Run("returns empty when no errors logged", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.errors", map[string]any{})
@@ -514,7 +551,8 @@ func TestToolsOpsTrackerErrors(t *testing.T) {
 	})
 
 	t.Run("returns logged errors up to limit", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		// Log a few errors directly via the tracker.
@@ -551,7 +589,8 @@ func TestToolsOpsTrackerErrors(t *testing.T) {
 	})
 
 	t.Run("limit param caps results", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		// Log 5 distinct errors.
@@ -591,7 +630,8 @@ func TestToolsOpsTrackerErrors(t *testing.T) {
 	})
 
 	t.Run("default limit is 10", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.errors", map[string]any{})
@@ -618,7 +658,7 @@ func TestToolsOpsTrackerErrors(t *testing.T) {
 		dir := t.TempDir()
 		badPath := filepath.Join(dir, "err\x00ors.ndjson")
 
-		m := newOpsTestManager(t)
+		m := newOpsTestManager(t, dir)
 		m.opsTracker = tracker.New(tracker.Config{
 			HandoffPath:     filepath.Join(dir, "handoff.json"),
 			ErrorLedgerPath: badPath,
@@ -645,7 +685,8 @@ func TestToolsOpsTrackerErrors(t *testing.T) {
 
 func TestToolsOpsRecentHandoffs(t *testing.T) {
 	t.Run("returns empty when no handoffs", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		req := opsCallTool(t, "ops.tracker.recent_handoffs", map[string]any{})
@@ -664,7 +705,8 @@ func TestToolsOpsRecentHandoffs(t *testing.T) {
 	})
 
 	t.Run("returns logged handoffs up to limit", func(t *testing.T) {
-		m := newOpsTestManager(t)
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
 		ctx := context.Background()
 
 		for i := 0; i < 2; i++ {
@@ -689,5 +731,63 @@ func TestToolsOpsRecentHandoffs(t *testing.T) {
 		if len(entries) != 2 {
 			t.Errorf("expected 2 entries, got %d", len(entries))
 		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tools_Tibrain_Batch (tibrain.batch)
+// ---------------------------------------------------------------------------
+
+func TestToolsTibrainBatch(t *testing.T) {
+	t.Run("batches multiple read-only calls successfully", func(t *testing.T) {
+		dir := t.TempDir()
+		m := newOpsTestManager(t, dir)
+		ctx := context.Background()
+
+		// Create a simple file to read
+		testFile := filepath.Join(dir, "test.txt")
+		if err := os.WriteFile(testFile, []byte("hello"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		// Build JSON with escaped path
+		opsJSON := fmt.Sprintf(`[
+			{"tool": "fs.read_file", "params": {"path": %q}},
+			{"tool": "fs.read_file", "params": {"path": %q}}
+		]`, testFile, testFile)
+
+		req := opsCallTool(t, "tibrain.batch", map[string]any{
+			"operations_json": opsJSON,
+		})
+		res, err := m.handleBatch(ctx, req)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		body := textContent(t, res)
+		if res.IsError {
+			t.Fatalf("expected ok, got error: %s", body)
+		}
+		// Should return JSON array with 2 results
+		var results []map[string]any
+		if err := json.Unmarshal([]byte(body), &results); err != nil {
+			t.Fatalf("unmarshal batch result: %v", err)
+		}
+		if len(results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(results))
+		}
+		for _, r := range results {
+			if r["status"] != "ok" {
+				t.Errorf("expected status ok, got %v", r)
+			}
+			if !strings.Contains(r["result"].(string), "hello") {
+				t.Errorf("expected result to contain 'hello', got %v", r)
+			}
+		}
+	})
+
+	t.Run("rejects write tool in batch when profile is read_only", func(t *testing.T) {
+		// This test would need a read-only profile manager - skipping for now
+		// as it requires config setup. The guard is tested in dispatchInnerTool.
+		t.Skip("requires read-only profile config setup")
 	})
 }

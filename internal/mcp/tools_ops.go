@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/ti/router/tibrain/internal/qualitygate"
+	"github.com/ti/router/tibrain/internal/security"
 	"github.com/ti/router/tibrain/internal/tracker"
 )
 
@@ -17,12 +18,17 @@ func (m *Manager) handleOpsQualityGate(ctx context.Context, req mcp.CallToolRequ
 	repo := req.GetString("repo_path", ".")
 	parallel := req.GetBool("parallel", false)
 
+	// Restrict repo_path to allowed roots (same as fs.* tools)
+	resolved, err := resolveSafePath(repo)
+	if err != nil {
+		return errInvalidParams(fmt.Sprintf("repo_path: %v", err)), nil
+	}
+
 	var report *qualitygate.Report
-	var err error
 	if parallel {
-		report, err = m.opsQG.RunParallel(ctx, repo)
+		report, err = m.opsQG.RunParallel(ctx, resolved)
 	} else {
-		report, err = m.opsQG.Run(ctx, repo)
+		report, err = m.opsQG.Run(ctx, resolved)
 	}
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("qualitygate: %v", err)), nil
@@ -156,11 +162,22 @@ func (m *Manager) dispatchInnerTool(ctx context.Context, toolName string, params
 		return "", fmt.Errorf("tool '%s' not found", toolName)
 	}
 
+	// Permission guard: enforce category for batched calls too.
+	// This prevents CatRead tool (tibrain.batch) from bypassing CatWrite/CatDestruct restrictions.
+	identity := security.IdentityFromContext(ctx)
+	if perr := m.guard.Allow(identity, rec.Category); perr != nil {
+		msg := perr.Error()
+		if pe, ok := perr.(*security.PermError); ok {
+			msg = pe.Msg
+		}
+		return "", fmt.Errorf("forbidden: %s", msg)
+	}
+
 	// Build a CallToolRequest from params
 	req := mcp.CallToolRequest{}
+	req.Params.Name = toolName
 	if len(params) > 0 {
-		b, _ := json.Marshal(params)
-		_ = json.Unmarshal(b, &req.Params)
+		req.Params.Arguments = params
 	}
 
 	// Type assert Handler to server.ToolHandlerFunc

@@ -46,11 +46,12 @@ set TIBRAIN_HOST=127.0.0.1
 
 REM Auth: đọc bearer token từ Z:\00_SECRET\router.env (single source of truth
 REM theo security rules — KHÔNG hardcode token trong script)
+REM PowerShell used because router.env is UTF-16 and findstr fails silently
 set "ROUTER_ENV=Z:\00_SECRET\router.env"
 set "TIBRAIN_MCP_BEARER_TOKEN="
 if exist "%ROUTER_ENV%" (
-    for /f "usebackq tokens=1,* delims==" %%a in (`findstr /b /c:"TIBRAIN_MCP_BEARER_TOKEN=" "%ROUTER_ENV%"`) do (
-        set "TIBRAIN_MCP_BEARER_TOKEN=%%b"
+    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$c=Get-Content '%ROUTER_ENV%' -Raw; $l=($c -split '\r?\n') | Where-Object { $_ -match '^TIBRAIN_MCP_BEARER_TOKEN=' }; if ($l) { ($l -split '=',2)[1] }"`) do (
+        set "TIBRAIN_MCP_BEARER_TOKEN=%%a"
     )
 )
 if not defined TIBRAIN_MCP_BEARER_TOKEN (
