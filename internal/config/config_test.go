@@ -844,6 +844,49 @@ func TestApplyEnv_DefaultBearerTokenEnvIfEmpty(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
+// AllowedRoots env expansion from YAML
+// ------------------------------------------------------------------
+
+func TestApplyEnv_AllowedRootsYAMLExpansion(t *testing.T) {
+	cfg := Default()
+	cfg.AllowedRoots = []string{"$HOME/.config/tibrain", "$PWD"}
+	setEnv(t, "HOME", "/home/user")
+	setEnv(t, "PWD", "/work/project")
+
+	cfg.applyEnv()
+
+	if len(cfg.AllowedRoots) != 2 {
+		t.Fatalf("allowed roots: got %v", cfg.AllowedRoots)
+	}
+	if cfg.AllowedRoots[0] != "/home/user/.config/tibrain" {
+		t.Errorf("first root not expanded: got %q, want %q", cfg.AllowedRoots[0], "/home/user/.config/tibrain")
+	}
+	if cfg.AllowedRoots[1] != "/work/project" {
+		t.Errorf("second root not expanded: got %q, want %q", cfg.AllowedRoots[1], "/work/project")
+	}
+}
+
+func TestApplyEnv_AllowedRootsWithDefaultValue(t *testing.T) {
+	cfg := Default()
+	// Using ${VAR:-default} syntax
+	cfg.AllowedRoots = []string{"${CUSTOM_VAR:-/default/path}", "$HOME/config"}
+	setEnv(t, "HOME", "/home/user")
+	// CUSTOM_VAR not set, should use default
+
+	cfg.applyEnv()
+
+	if len(cfg.AllowedRoots) != 2 {
+		t.Fatalf("allowed roots: got %v", cfg.AllowedRoots)
+	}
+	if cfg.AllowedRoots[0] != "/default/path" {
+		t.Errorf("default value not used: got %q, want %q", cfg.AllowedRoots[0], "/default/path")
+	}
+	if cfg.AllowedRoots[1] != "/home/user/config" {
+		t.Errorf("second root not expanded: got %q, want %q", cfg.AllowedRoots[1], "/home/user/config")
+	}
+}
+
+// ------------------------------------------------------------------
 // RuntimePath()
 // ------------------------------------------------------------------
 

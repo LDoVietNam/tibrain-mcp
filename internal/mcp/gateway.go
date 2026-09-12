@@ -98,6 +98,9 @@ func NewManager(cfg *config.Config, guard *security.Guard, auditor *security.Aud
 	// Initialize dispatcher with memory and retriever
 	m.dispatcher = tools.NewDispatcher(mem, retriever, allowedRoots)
 
+	// Configure allowed roots for fs.* tools (package-level in tools_filesystem.go)
+	SetAllowedRoots(allowedRoots)
+
 	m.registerAllTools()
 	m.initializeMCPClients(cfg)
 

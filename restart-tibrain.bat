@@ -44,13 +44,18 @@ REM Start TiBrain — port/host qua env (binary bỏ flag --port/--host)
 set TIBRAIN_PORT=3005
 set TIBRAIN_HOST=127.0.0.1
 
+REM Set correct HOME/USERPROFILE for environment variable expansion in config.yaml
+REM The shell HOME points to ECC-main dir, but config.yaml expects Windows user profile
+set HOME=C:\Users\MIN
+set USERPROFILE=C:\Users\MIN
+
 REM Auth: đọc bearer token từ Z:\00_SECRET\router.env (single source of truth
 REM theo security rules — KHÔNG hardcode token trong script)
 REM PowerShell used because router.env is UTF-16 and findstr fails silently
 set "ROUTER_ENV=Z:\00_SECRET\router.env"
 set "TIBRAIN_MCP_BEARER_TOKEN="
 if exist "%ROUTER_ENV%" (
-    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$c=Get-Content '%ROUTER_ENV%' -Raw; $l=($c -split '\r?\n') | Where-Object { $_ -match '^TIBRAIN_MCP_BEARER_TOKEN=' }; if ($l) { ($l -split '=',2)[1] }"`) do (
+    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Content '%ROUTER_ENV%' -Encoding Unicode | Select-String '^TIBRAIN_MCP_BEARER_TOKEN=' | ForEach-Object { $_.Line.Split('=',2)[1] }"`) do (
         set "TIBRAIN_MCP_BEARER_TOKEN=%%a"
     )
 )

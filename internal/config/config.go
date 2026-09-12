@@ -232,6 +232,11 @@ func (c *Config) applyEnv() {
 		c.AllowedRoots = parseRoots(v)
 	} else if v := strings.TrimSpace(os.Getenv("MCP_ALLOWED_ROOTS")); v != "" {
 		c.AllowedRoots = parseRoots(v)
+	} else {
+		// Expand environment variables in AllowedRoots from YAML (e.g., $HOME, $PWD)
+		for i := range c.AllowedRoots {
+			c.AllowedRoots[i] = expandEnv(c.AllowedRoots[i])
+		}
 	}
 	if c.Auth.BearerTokenEnv == "" {
 		c.Auth.BearerTokenEnv = "TIBRAIN_MCP_BEARER_TOKEN"
@@ -257,11 +262,11 @@ func (c *Config) applyEnv() {
 	}
 }
 
-// expandEnv expands environment variables in the form ${VAR} or ${VAR:-default}
+// expandEnv expands environment variables in the form $VAR, ${VAR}, or ${VAR:-default}
 func expandEnv(s string) string {
-	// Handle ${VAR:-default} syntax
+	// First handle ${VAR:-default} and ${VAR} syntax
 	re := regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
-	return re.ReplaceAllStringFunc(s, func(match string) string {
+	s = re.ReplaceAllStringFunc(s, func(match string) string {
 		matches := re.FindStringSubmatch(match)
 		if len(matches) < 2 {
 			return match
@@ -276,6 +281,18 @@ func expandEnv(s string) string {
 		}
 		return defaultValue
 	})
+
+	// Then handle $VAR syntax (simple $VAR format)
+	reSimple := regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+	s = reSimple.ReplaceAllStringFunc(s, func(match string) string {
+		varName := match[1:] // Remove the $ prefix
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return match // Return original if env var not set
+	})
+
+	return s
 }
 
 // BearerToken resolves the gateway bearer token from the configured env var or a
