@@ -21,10 +21,10 @@ const (
 )
 
 type E2ETestClient struct {
-	client     *http.Client
-	baseURL    string
-	token      string
-	sessionID  string
+	client    *http.Client
+	baseURL   string
+	token     string
+	sessionID string
 }
 
 func newE2ETestClient(t *testing.T) *E2ETestClient {
